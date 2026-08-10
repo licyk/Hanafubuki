@@ -95,37 +95,26 @@ jobs:
           set -euo pipefail
           sign_one() {
             local target="$1"
-            local directory="$2"
-            local pattern="$3"
             local root="release-bundles/hanafubuki-${{ inputs.artifact_channel }}-${{ inputs.artifact_prefix }}-${target}"
-            local matches=()
-            shopt -s nullglob
-            matches=("$root/$directory"/$pattern)
-            shopt -u nullglob
-            if [[ "${#matches[@]}" -ne 1 || ! -f "${matches[0]}" ]]; then
-              echo "Expected exactly one updater artifact for ${target}, found ${#matches[@]}." >&2
+            local filename
+            filename="$(bun scripts/release/target-manifest.ts updater-path --directory "$root")"
+            if [[ "$filename" != "$(basename "$filename")" || ! -s "$root/$filename" ]]; then
+              echo "target.json selected an invalid updater artifact for ${target}." >&2
               exit 1
             fi
-            if [[ -e "${matches[0]}.sig" ]]; then
-              echo "Updater artifact already has a signature: ${matches[0]}.sig" >&2
+            bun run tauri signer sign "$root/$filename"
+            if [[ ! -s "$root/$filename.sig" ]]; then
+              echo "Updater signer did not create a non-empty signature for $filename." >&2
               exit 1
             fi
-            bun run tauri signer sign "${matches[0]}"
-            if [[ ! -s "${matches[0]}.sig" ]]; then
-              echo "Updater signer did not create a non-empty signature for ${matches[0]}." >&2
-              exit 1
-            fi
-            local status="$root/signing-status.json"
-            jq -e '.schemaVersion == 2 and .updaterSigned == false' "$status" >/dev/null
-            jq '.updaterSigned = true' "$status" > "${status}.tmp"
-            mv "${status}.tmp" "$status"
+            bun scripts/release/target-manifest.ts record-signature --directory "$root"
           }
 
-          sign_one x86_64-pc-windows-msvc nsis '*.exe'
-          sign_one aarch64-apple-darwin macos '*.app.tar.gz'
-          sign_one x86_64-apple-darwin macos '*.app.tar.gz'
-          sign_one x86_64-unknown-linux-gnu appimage '*.AppImage'
-          sign_one aarch64-unknown-linux-gnu appimage '*.AppImage'
+          sign_one x86_64-pc-windows-msvc
+          sign_one aarch64-apple-darwin
+          sign_one x86_64-apple-darwin
+          sign_one x86_64-unknown-linux-gnu
+          sign_one aarch64-unknown-linux-gnu
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: hanafubuki-${{ inputs.artifact_channel }}-${{ inputs.artifact_prefix }}

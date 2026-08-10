@@ -189,16 +189,19 @@ jobs:
         if: env.UPDATER_PUBLIC_KEY != ''
         shell: bash
         working-directory: source
-        env:
-          PYTHONPATH: scripts/release
         run: |
           set -euo pipefail
-          public_key_path="$RUNNER_TEMP/hanafubuki-updater.pub"
           config_path="$RUNNER_TEMP/tauri.updater.conf.json"
-          printf '%s' "$UPDATER_PUBLIC_KEY" > "$public_key_path"
-          python -m hanafubuki_release updater-config \
-            --public-key "$public_key_path" \
-            --output "$config_path"
+          CONFIG_PATH="$config_path" node --input-type=module --eval '
+            import { writeFileSync } from "node:fs";
+            const pubkey = process.env.UPDATER_PUBLIC_KEY?.trim();
+            if (!pubkey) throw new Error("Updater public key must not be empty");
+            writeFileSync(
+              process.env.CONFIG_PATH,
+              `${JSON.stringify({ plugins: { updater: { pubkey } } })}\n`,
+              "utf8",
+            );
+          '
           printf 'TAURI_UPDATER_CONFIG=%s\n' "$config_path" >> "$GITHUB_ENV"
       - name: Import Windows signing certificate
         if: matrix.platform == 'windows' && steps.platform_signing.outputs.signed == 'true'
@@ -324,34 +327,28 @@ jobs:
           fi
           archives=("$macos_root"/*.app.tar.gz)
           [[ "${#archives[@]}" -eq 1 && -s "${archives[0]}" ]]
-      - name: Remove macOS bundler intermediates
-        if: matrix.platform == 'macos'
-        shell: bash
-        working-directory: source
-        run: |
-          set -euo pipefail
-          bundle_root="src-tauri/target/${{ matrix.targetTriple }}/release/bundle"
-          rm -f \
-            "$bundle_root/dmg/bundle_dmg.sh" \
-            "$bundle_root/dmg/icon.icns"
-          rm -rf "$bundle_root/share"
       - name: Build Windows portable archive
         if: matrix.platform == 'windows'
         shell: pwsh
         working-directory: source
-        env:
-          PYTHONPATH: scripts/release
         run: |
           $ErrorActionPreference = "Stop"
           $releaseRoot = "src-tauri/target/${{ matrix.targetTriple }}/release"
-          $version = (Get-Content "src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json).version
-          if ([string]::IsNullOrWhiteSpace($version)) {
-            throw "Tauri version is missing"
+          $archiveRoot = Join-Path $env:RUNNER_TEMP "hanafubuki-portable"
+          $applicationRoot = Join-Path $archiveRoot "Hanafubuki"
+          $generatedRoot = Join-Path $applicationRoot "generated"
+          New-Item -ItemType Directory -Path $generatedRoot | Out-Null
+          Copy-Item "$releaseRoot/${{ matrix.binary }}" (Join-Path $applicationRoot "Hanafubuki.exe")
+          foreach ($resource in @("python-assets", "python-bootstrap", "micromamba")) {
+            Copy-Item "src-tauri/generated/$resource" (Join-Path $generatedRoot $resource) -Recurse
           }
-          python -m hanafubuki_release build-windows-portable `
-            --executable "$releaseRoot/${{ matrix.binary }}" `
-            --resources-root "src-tauri/generated" `
-            --output "$releaseRoot/bundle/portable/Hanafubuki-$version-windows-x86_64-portable.zip"
+          $portableDirectory = Join-Path $releaseRoot "bundle/portable"
+          New-Item -ItemType Directory -Path $portableDirectory | Out-Null
+          $archive = Join-Path $portableDirectory "Hanafubuki-portable.zip"
+          & tar.exe -a -c -f $archive -C $archiveRoot Hanafubuki
+          if ($LASTEXITCODE -ne 0 -or !(Test-Path $archive) -or (Get-Item $archive).Length -le 0) {
+            throw "Windows portable archive creation failed"
+          }
       - name: Verify Windows signatures
         if: matrix.platform == 'windows' && steps.platform_signing.outputs.signed == 'true'
         shell: pwsh
@@ -396,15 +393,52 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$app"
           xcrun stapler validate "$app"
           xcrun stapler validate "$dmg"
-      - name: Record signing status
+      - name: Normalize target handoff
         shell: bash
         working-directory: source
+        env:
+          PLATFORM_SIGNED: ${{ steps.platform_signing.outputs.signed }}
         run: |
-          status_path="src-tauri/target/${{ matrix.targetTriple }}/release/bundle/signing-status.json"
-          printf '%s\n' '{"schemaVersion":2,"platform":"${{ matrix.platform }}","targetTriple":"${{ matrix.targetTriple }}","platformSigned":${{ steps.platform_signing.outputs.signed }},"updaterSigned":false}' > "$status_path"
+          set -euo pipefail
+          bundle_root="src-tauri/target/${{ matrix.targetTriple }}/release/bundle"
+          target_root="$RUNNER_TEMP/hanafubuki-target-${{ matrix.targetTriple }}"
+          version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          single_file() {
+            local directory="$1"
+            local pattern="$2"
+            local matches=()
+            while IFS= read -r -d '' path; do matches+=("$path"); done < <(
+              find "$directory" -maxdepth 1 -type f -name "$pattern" -print0
+            )
+            if [[ "${#matches[@]}" -ne 1 || ! -s "${matches[0]}" ]]; then
+              echo "Expected one non-empty $pattern in $directory, found ${#matches[@]}." >&2
+              exit 1
+            fi
+            printf '%s\n' "${matches[0]}"
+          }
+
+          sources=()
+          if [[ "${{ matrix.platform }}" == "windows" ]]; then
+            sources+=(--source "nsis=$(single_file "$bundle_root/nsis" '*.exe')")
+            sources+=(--source "msi=$(single_file "$bundle_root/msi" '*.msi')")
+            sources+=(--source "portable-zip=$(single_file "$bundle_root/portable" '*.zip')")
+          elif [[ "${{ matrix.platform }}" == "macos" ]]; then
+            sources+=(--source "dmg=$(single_file "$bundle_root/dmg" '*.dmg')")
+            sources+=(--source "app-tar-gz=$(single_file "$bundle_root/macos" '*.app.tar.gz')")
+          else
+            sources+=(--source "appimage=$(single_file "$bundle_root/appimage" '*.AppImage')")
+            sources+=(--source "deb=$(single_file "$bundle_root/deb" '*.deb')")
+            sources+=(--source "rpm=$(single_file "$bundle_root/rpm" '*.rpm')")
+          fi
+          bun scripts/release/target-manifest.ts create \
+            --directory "$target_root" \
+            --version "$version" \
+            --target-triple "${{ matrix.targetTriple }}" \
+            --platform-signed "$PLATFORM_SIGNED" \
+            "${sources[@]}"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: hanafubuki-${{ inputs.artifact_channel }}-${{ inputs.artifact_prefix }}-${{ matrix.targetTriple }}
-          path: source/src-tauri/target/${{ matrix.targetTriple }}/release/bundle
+          path: ${{ runner.temp }}/hanafubuki-target-${{ matrix.targetTriple }}
           if-no-files-found: error
           retention-days: 1
