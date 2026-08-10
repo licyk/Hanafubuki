@@ -38,7 +38,7 @@ jobs:
         id: source
         shell: bash
         env:
-          SOURCE_REPOSITORY: ${{ vars.HANAFUBUKI_SOURCE_REPOSITORY }}
+          SOURCE_REPOSITORY: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
           SOURCE_TAG: ${{ inputs.source_tag }}
         run: |
           set -euo pipefail
@@ -86,23 +86,23 @@ jobs:
     needs: resolve
     uses: ./.github/workflows/native-compile.yml
     with:
-      source_repository: ${{ vars.HANAFUBUKI_SOURCE_REPOSITORY }}
       source_sha: ${{ needs.resolve.outputs.source_sha }}
       artifact_prefix: ${{ needs.resolve.outputs.version }}
     secrets:
+      HANAFUBUKI_SOURCE_REPOSITORY: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
       GIT_ED25519_PRIVATE_KEY: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
 
   package:
     needs: [resolve, compile]
     uses: ./.github/workflows/native-package.yml
     with:
-      source_repository: ${{ vars.HANAFUBUKI_SOURCE_REPOSITORY }}
       source_sha: ${{ needs.resolve.outputs.source_sha }}
       artifact_prefix: ${{ needs.resolve.outputs.version }}
       artifact_channel: release
-      updater_public_key: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
     secrets:
+      HANAFUBUKI_SOURCE_REPOSITORY: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
       GIT_ED25519_PRIVATE_KEY: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
+      TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
       WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
       WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
       APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -116,13 +116,13 @@ jobs:
     needs: [resolve, package]
     uses: ./.github/workflows/native-updater-sign.yml
     with:
-      source_repository: ${{ vars.HANAFUBUKI_SOURCE_REPOSITORY }}
       source_sha: ${{ needs.resolve.outputs.source_sha }}
       artifact_prefix: ${{ needs.resolve.outputs.version }}
       artifact_channel: release
-      updater_public_key: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
     secrets:
+      HANAFUBUKI_SOURCE_REPOSITORY: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
       GIT_ED25519_PRIVATE_KEY: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
+      TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
@@ -151,7 +151,7 @@ jobs:
       - name: Checkout source commit
         shell: bash
         env:
-          SOURCE_REPOSITORY: ${{ vars.HANAFUBUKI_SOURCE_REPOSITORY }}
+          SOURCE_REPOSITORY: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
           SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
         run: |
           set -euo pipefail
@@ -179,10 +179,10 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           MODELSCOPE_API_TOKEN: ${{ secrets.MODELSCOPE_API_TOKEN }}
-          HANAFUBUKI_HF_REPOSITORY: ${{ vars.HANAFUBUKI_HF_REPOSITORY }}
-          HANAFUBUKI_HF_REVISION: ${{ vars.HANAFUBUKI_HF_REVISION }}
-          HANAFUBUKI_MODELSCOPE_REPOSITORY: ${{ vars.HANAFUBUKI_MODELSCOPE_REPOSITORY }}
-          HANAFUBUKI_MODELSCOPE_REVISION: ${{ vars.HANAFUBUKI_MODELSCOPE_REVISION }}
+          HANAFUBUKI_HF_REPOSITORY: ${{ secrets.HANAFUBUKI_HF_REPOSITORY }}
+          HANAFUBUKI_HF_REVISION: ${{ secrets.HANAFUBUKI_HF_REVISION }}
+          HANAFUBUKI_MODELSCOPE_REPOSITORY: ${{ secrets.HANAFUBUKI_MODELSCOPE_REPOSITORY }}
+          HANAFUBUKI_MODELSCOPE_REVISION: ${{ secrets.HANAFUBUKI_MODELSCOPE_REVISION }}
         run: >-
           uv run --project scripts/release --locked python -m hanafubuki_release release
           --repo-root .

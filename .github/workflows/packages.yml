@@ -37,7 +37,7 @@ jobs:
         id: source
         shell: bash
         env:
-          SOURCE_REPOSITORY: ${{ vars.HANAFUBUKI_SOURCE_REPOSITORY }}
+          SOURCE_REPOSITORY: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
           SOURCE_REF: ${{ inputs.source_ref }}
         run: |
           set -euo pipefail
@@ -59,23 +59,23 @@ jobs:
     needs: resolve
     uses: ./.github/workflows/native-compile.yml
     with:
-      source_repository: ${{ vars.HANAFUBUKI_SOURCE_REPOSITORY }}
       source_sha: ${{ needs.resolve.outputs.source_sha }}
       artifact_prefix: ${{ needs.resolve.outputs.source_sha }}
     secrets:
+      HANAFUBUKI_SOURCE_REPOSITORY: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
       GIT_ED25519_PRIVATE_KEY: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
 
   package:
     needs: [resolve, compile]
     uses: ./.github/workflows/native-package.yml
     with:
-      source_repository: ${{ vars.HANAFUBUKI_SOURCE_REPOSITORY }}
       source_sha: ${{ needs.resolve.outputs.source_sha }}
       artifact_prefix: ${{ needs.resolve.outputs.source_sha }}
       artifact_channel: packages
-      updater_public_key: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
     secrets:
+      HANAFUBUKI_SOURCE_REPOSITORY: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
       GIT_ED25519_PRIVATE_KEY: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
+      TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
       WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
       WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
       APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -89,12 +89,12 @@ jobs:
     needs: [resolve, package]
     uses: ./.github/workflows/native-updater-sign.yml
     with:
-      source_repository: ${{ vars.HANAFUBUKI_SOURCE_REPOSITORY }}
       source_sha: ${{ needs.resolve.outputs.source_sha }}
       artifact_prefix: ${{ needs.resolve.outputs.source_sha }}
       artifact_channel: packages
-      updater_public_key: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
     secrets:
+      HANAFUBUKI_SOURCE_REPOSITORY: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
       GIT_ED25519_PRIVATE_KEY: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
+      TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}

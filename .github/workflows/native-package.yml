@@ -3,9 +3,6 @@ name: Native packaging and optional platform signing
 on:
   workflow_call:
     inputs:
-      source_repository:
-        required: true
-        type: string
       source_sha:
         required: true
         type: string
@@ -15,13 +12,13 @@ on:
       artifact_channel:
         required: true
         type: string
-      updater_public_key:
-        required: false
-        type: string
-        default: ""
     secrets:
+      HANAFUBUKI_SOURCE_REPOSITORY:
+        required: true
       GIT_ED25519_PRIVATE_KEY:
         required: true
+      TAURI_UPDATER_PUBLIC_KEY:
+        required: false
       WINDOWS_CERTIFICATE:
         required: false
       WINDOWS_CERTIFICATE_PASSWORD:
@@ -79,6 +76,7 @@ jobs:
       CI: "true"
       MICROMAMBA_TARGET_TRIPLE: ${{ matrix.targetTriple }}
       TAURI_RELEASE_CONFIG: scripts/release/tauri.release.conf.json
+      UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
     steps:
       - name: Configure Git
         shell: bash
@@ -97,7 +95,7 @@ jobs:
       - name: Checkout source commit
         shell: bash
         env:
-          SOURCE_REPOSITORY: ${{ inputs.source_repository }}
+          SOURCE_REPOSITORY: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
           SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
           set -euo pipefail
@@ -188,11 +186,10 @@ jobs:
             printf 'signed=false\n' >> "$GITHUB_OUTPUT"
           fi
       - name: Create updater configuration
-        if: inputs.updater_public_key != ''
+        if: env.UPDATER_PUBLIC_KEY != ''
         shell: bash
         working-directory: source
         env:
-          UPDATER_PUBLIC_KEY: ${{ inputs.updater_public_key }}
           PYTHONPATH: scripts/release
         run: |
           set -euo pipefail

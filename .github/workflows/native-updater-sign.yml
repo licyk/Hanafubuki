@@ -3,9 +3,6 @@ name: Native updater signing
 on:
   workflow_call:
     inputs:
-      source_repository:
-        required: true
-        type: string
       source_sha:
         required: true
         type: string
@@ -15,13 +12,13 @@ on:
       artifact_channel:
         required: true
         type: string
-      updater_public_key:
-        required: false
-        type: string
-        default: ""
     secrets:
+      HANAFUBUKI_SOURCE_REPOSITORY:
+        required: true
       GIT_ED25519_PRIVATE_KEY:
         required: true
+      TAURI_UPDATER_PUBLIC_KEY:
+        required: false
       TAURI_SIGNING_PRIVATE_KEY:
         required: false
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
@@ -52,7 +49,7 @@ jobs:
       - name: Checkout source commit
         shell: bash
         env:
-          SOURCE_REPOSITORY: ${{ inputs.source_repository }}
+          SOURCE_REPOSITORY: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
           SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
           set -euo pipefail
@@ -71,7 +68,7 @@ jobs:
         shell: bash
         env:
           UPDATER_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          UPDATER_PUBLIC_KEY: ${{ inputs.updater_public_key }}
+          UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
         run: |
           if [[ -n "$UPDATER_PRIVATE_KEY" && -n "$UPDATER_PUBLIC_KEY" ]]; then
             printf 'signed=true\n' >> "$GITHUB_OUTPUT"

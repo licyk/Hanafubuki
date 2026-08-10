@@ -3,9 +3,6 @@ name: Native compilation
 on:
   workflow_call:
     inputs:
-      source_repository:
-        required: true
-        type: string
       source_sha:
         required: true
         type: string
@@ -13,6 +10,8 @@ on:
         required: true
         type: string
     secrets:
+      HANAFUBUKI_SOURCE_REPOSITORY:
+        required: true
       GIT_ED25519_PRIVATE_KEY:
         required: true
 
@@ -68,7 +67,7 @@ jobs:
       - name: Checkout source commit
         shell: bash
         env:
-          SOURCE_REPOSITORY: ${{ inputs.source_repository }}
+          SOURCE_REPOSITORY: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
           SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
           set -euo pipefail
