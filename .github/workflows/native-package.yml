@@ -324,6 +324,17 @@ jobs:
           fi
           archives=("$macos_root"/*.app.tar.gz)
           [[ "${#archives[@]}" -eq 1 && -s "${archives[0]}" ]]
+      - name: Remove macOS bundler intermediates
+        if: matrix.platform == 'macos'
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          bundle_root="src-tauri/target/${{ matrix.targetTriple }}/release/bundle"
+          rm -f \
+            "$bundle_root/dmg/bundle_dmg.sh" \
+            "$bundle_root/dmg/icon.icns"
+          rm -rf "$bundle_root/share"
       - name: Build Windows portable archive
         if: matrix.platform == 'windows'
         shell: pwsh
