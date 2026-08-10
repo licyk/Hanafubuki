@@ -91,6 +91,7 @@ jobs:
     secrets:
       HANAFUBUKI_SOURCE_REPOSITORY: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
       GIT_ED25519_PRIVATE_KEY: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
+      TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
 
   package:
     needs: [resolve, compile]

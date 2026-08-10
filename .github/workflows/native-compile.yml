@@ -14,6 +14,8 @@ on:
         required: true
       GIT_ED25519_PRIVATE_KEY:
         required: true
+      TAURI_UPDATER_PUBLIC_KEY:
+        required: false
 
 permissions:
   contents: read
@@ -49,6 +51,7 @@ jobs:
     env:
       CI: "true"
       MICROMAMBA_TARGET_TRIPLE: ${{ matrix.targetTriple }}
+      UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
     steps:
       - name: Configure Git
         shell: bash
@@ -95,14 +98,39 @@ jobs:
       - name: Install dependencies
         working-directory: source
         run: bun install --frozen-lockfile
+      - name: Create updater configuration
+        if: env.UPDATER_PUBLIC_KEY != ''
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          config_path="$RUNNER_TEMP/tauri.updater.conf.json"
+          CONFIG_PATH="$config_path" node --input-type=module --eval '
+            import { writeFileSync } from "node:fs";
+            const pubkey = process.env.UPDATER_PUBLIC_KEY?.trim();
+            if (!pubkey) throw new Error("Updater public key must not be empty");
+            writeFileSync(
+              process.env.CONFIG_PATH,
+              `${JSON.stringify({ plugins: { updater: { pubkey } } })}\n`,
+              "utf8",
+            );
+          '
+          printf 'TAURI_UPDATER_CONFIG=%s\n' "$config_path" >> "$GITHUB_ENV"
       - name: Compile application
         shell: bash
         working-directory: source
-        run: >-
-          bun run tauri build --ci
-          --target "${{ matrix.targetTriple }}"
-          --no-bundle
-          -- --locked
+        run: |
+          set -euo pipefail
+          args=(
+            bun run tauri build --ci
+            --target "${{ matrix.targetTriple }}"
+            --no-bundle
+          )
+          if [[ -n "${TAURI_UPDATER_CONFIG:-}" ]]; then
+            args+=(--config "$TAURI_UPDATER_CONFIG")
+          fi
+          args+=(-- --locked)
+          "${args[@]}"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: hanafubuki-compiled-${{ inputs.artifact_prefix }}-${{ matrix.targetTriple }}
