@@ -1,0 +1,137 @@
+name: Native updater signing
+
+on:
+  workflow_call:
+    inputs:
+      source_repository:
+        required: true
+        type: string
+      source_sha:
+        required: true
+        type: string
+      artifact_prefix:
+        required: true
+        type: string
+      artifact_channel:
+        required: true
+        type: string
+      updater_public_key:
+        required: false
+        type: string
+        default: ""
+    secrets:
+      GIT_ED25519_PRIVATE_KEY:
+        required: true
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  sign:
+    name: Sign updater artifacts
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Configure Git
+        shell: bash
+        env:
+          DEPLOY_PRI: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
+          GIT_USERNAME: ${{ github.repository_owner }}
+          GIT_EMAIL: ${{ github.repository_owner }}@user.github.com
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh/
+          printf '%s\n' "${DEPLOY_PRI}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          git config --global user.name "${GIT_USERNAME}"
+          git config --global user.email "${GIT_EMAIL}"
+      - name: Checkout source commit
+        shell: bash
+        env:
+          SOURCE_REPOSITORY: ${{ inputs.source_repository }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [[ -n "$SOURCE_REPOSITORY" && -n "$SOURCE_SHA" ]]
+          git clone --filter=blob:none --no-checkout "$SOURCE_REPOSITORY" source
+          git -C source fetch --depth=1 origin "$SOURCE_SHA"
+          git -C source checkout --detach "$SOURCE_SHA"
+          [[ "$(git -C source rev-parse HEAD)" == "$SOURCE_SHA" ]]
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: hanafubuki-${{ inputs.artifact_channel }}-${{ inputs.artifact_prefix }}-*
+          path: source/release-bundles
+          merge-multiple: false
+      - name: Detect updater signing credentials
+        id: updater_signing
+        shell: bash
+        env:
+          UPDATER_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          UPDATER_PUBLIC_KEY: ${{ inputs.updater_public_key }}
+        run: |
+          if [[ -n "$UPDATER_PRIVATE_KEY" && -n "$UPDATER_PUBLIC_KEY" ]]; then
+            printf 'signed=true\n' >> "$GITHUB_OUTPUT"
+          else
+            printf 'signed=false\n' >> "$GITHUB_OUTPUT"
+            echo "Updater signing credentials are incomplete; retaining unsigned updater artifacts."
+          fi
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        if: steps.updater_signing.outputs.signed == 'true'
+        with:
+          bun-version: "1.3.13"
+      - name: Install updater signer
+        if: steps.updater_signing.outputs.signed == 'true'
+        working-directory: source
+        run: bun install --frozen-lockfile
+      - name: Sign updater artifacts
+        if: steps.updater_signing.outputs.signed == 'true'
+        shell: bash
+        working-directory: source
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          sign_one() {
+            local target="$1"
+            local directory="$2"
+            local pattern="$3"
+            local root="release-bundles/hanafubuki-${{ inputs.artifact_channel }}-${{ inputs.artifact_prefix }}-${target}"
+            local matches=()
+            shopt -s nullglob
+            matches=("$root/$directory"/$pattern)
+            shopt -u nullglob
+            if [[ "${#matches[@]}" -ne 1 || ! -f "${matches[0]}" ]]; then
+              echo "Expected exactly one updater artifact for ${target}, found ${#matches[@]}." >&2
+              exit 1
+            fi
+            if [[ -e "${matches[0]}.sig" ]]; then
+              echo "Updater artifact already has a signature: ${matches[0]}.sig" >&2
+              exit 1
+            fi
+            bun run tauri signer sign "${matches[0]}"
+            if [[ ! -s "${matches[0]}.sig" ]]; then
+              echo "Updater signer did not create a non-empty signature for ${matches[0]}." >&2
+              exit 1
+            fi
+            local status="$root/signing-status.json"
+            jq -e '.schemaVersion == 2 and .updaterSigned == false' "$status" >/dev/null
+            jq '.updaterSigned = true' "$status" > "${status}.tmp"
+            mv "${status}.tmp" "$status"
+          }
+
+          sign_one x86_64-pc-windows-msvc nsis '*.exe'
+          sign_one aarch64-apple-darwin macos '*.app.tar.gz'
+          sign_one x86_64-apple-darwin macos '*.app.tar.gz'
+          sign_one x86_64-unknown-linux-gnu appimage '*.AppImage'
+          sign_one aarch64-unknown-linux-gnu appimage '*.AppImage'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hanafubuki-${{ inputs.artifact_channel }}-${{ inputs.artifact_prefix }}
+          path: source/release-bundles
+          if-no-files-found: error
+          retention-days: 30

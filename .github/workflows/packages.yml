@@ -1,0 +1,100 @@
+name: Hanafubuki packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Development repository branch, tag, or commit
+        required: true
+        type: string
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    name: Resolve source
+    runs-on: ubuntu-22.04
+    outputs:
+      source_sha: ${{ steps.source.outputs.source_sha }}
+    steps:
+      - name: Configure Git
+        shell: bash
+        env:
+          DEPLOY_PRI: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
+          GIT_USERNAME: ${{ github.repository_owner }}
+          GIT_EMAIL: ${{ github.repository_owner }}@user.github.com
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh/
+          printf '%s\n' "${DEPLOY_PRI}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          git config --global user.name "${GIT_USERNAME}"
+          git config --global user.email "${GIT_EMAIL}"
+      - name: Resolve immutable source commit
+        id: source
+        shell: bash
+        env:
+          SOURCE_REPOSITORY: ${{ vars.HANAFUBUKI_SOURCE_REPOSITORY }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SOURCE_REPOSITORY" || -z "$SOURCE_REF" ]]; then
+            echo "The source repository and ref must be non-empty." >&2
+            exit 1
+          fi
+          git clone --filter=blob:none --no-checkout "$SOURCE_REPOSITORY" source
+          git -C source fetch --depth=1 origin "$SOURCE_REF"
+          git -C source checkout --detach FETCH_HEAD
+          source_sha="$(git -C source rev-parse HEAD)"
+          if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "The source ref did not resolve to a full Git commit." >&2
+            exit 1
+          fi
+          printf 'source_sha=%s\n' "$source_sha" >> "$GITHUB_OUTPUT"
+
+  compile:
+    needs: resolve
+    uses: ./.github/workflows/native-compile.yml
+    with:
+      source_repository: ${{ vars.HANAFUBUKI_SOURCE_REPOSITORY }}
+      source_sha: ${{ needs.resolve.outputs.source_sha }}
+      artifact_prefix: ${{ needs.resolve.outputs.source_sha }}
+    secrets:
+      GIT_ED25519_PRIVATE_KEY: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
+
+  package:
+    needs: [resolve, compile]
+    uses: ./.github/workflows/native-package.yml
+    with:
+      source_repository: ${{ vars.HANAFUBUKI_SOURCE_REPOSITORY }}
+      source_sha: ${{ needs.resolve.outputs.source_sha }}
+      artifact_prefix: ${{ needs.resolve.outputs.source_sha }}
+      artifact_channel: packages
+      updater_public_key: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+    secrets:
+      GIT_ED25519_PRIVATE_KEY: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
+      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+  updater:
+    needs: [resolve, package]
+    uses: ./.github/workflows/native-updater-sign.yml
+    with:
+      source_repository: ${{ vars.HANAFUBUKI_SOURCE_REPOSITORY }}
+      source_sha: ${{ needs.resolve.outputs.source_sha }}
+      artifact_prefix: ${{ needs.resolve.outputs.source_sha }}
+      artifact_channel: packages
+      updater_public_key: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+    secrets:
+      GIT_ED25519_PRIVATE_KEY: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}

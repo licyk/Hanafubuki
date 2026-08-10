@@ -1,0 +1,192 @@
+name: Hanafubuki release
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_tag:
+        description: Stable development repository tag in vX.Y.Z form
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    name: Validate source release
+    runs-on: ubuntu-22.04
+    outputs:
+      source_sha: ${{ steps.source.outputs.source_sha }}
+      version: ${{ steps.release.outputs.version }}
+      published_at: ${{ steps.release.outputs.published_at }}
+    steps:
+      - name: Configure Git
+        shell: bash
+        env:
+          DEPLOY_PRI: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
+          GIT_USERNAME: ${{ github.repository_owner }}
+          GIT_EMAIL: ${{ github.repository_owner }}@user.github.com
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh/
+          printf '%s\n' "${DEPLOY_PRI}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          git config --global user.name "${GIT_USERNAME}"
+          git config --global user.email "${GIT_EMAIL}"
+      - name: Resolve immutable source tag
+        id: source
+        shell: bash
+        env:
+          SOURCE_REPOSITORY: ${{ vars.HANAFUBUKI_SOURCE_REPOSITORY }}
+          SOURCE_TAG: ${{ inputs.source_tag }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SOURCE_REPOSITORY" || ! "$SOURCE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "The source repository must be configured and source_tag must use vX.Y.Z." >&2
+            exit 1
+          fi
+          git clone --filter=blob:none --no-checkout "$SOURCE_REPOSITORY" source
+          git -C source fetch --depth=1 origin "refs/tags/$SOURCE_TAG:refs/tags/$SOURCE_TAG"
+          git -C source checkout --detach "refs/tags/$SOURCE_TAG"
+          source_sha="$(git -C source rev-parse HEAD)"
+          if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "The source tag did not resolve to a full Git commit." >&2
+            exit 1
+          fi
+          printf 'source_sha=%s\n' "$source_sha" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.9"
+          enable-cache: true
+      - name: Install release tooling
+        working-directory: source
+        run: uv sync --project scripts/release --locked
+      - name: Validate version and source tag
+        id: release
+        shell: bash
+        working-directory: source
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          SOURCE_TAG: ${{ inputs.source_tag }}
+        run: |
+          set -euo pipefail
+          published_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          uv run --project scripts/release --locked python -m hanafubuki_release validate \
+            --repo-root . \
+            --tag "$SOURCE_TAG" \
+            --commit "$SOURCE_SHA" \
+            --published-at "$published_at" \
+            --github-output "$GITHUB_OUTPUT"
+
+  compile:
+    needs: resolve
+    uses: ./.github/workflows/native-compile.yml
+    with:
+      source_repository: ${{ vars.HANAFUBUKI_SOURCE_REPOSITORY }}
+      source_sha: ${{ needs.resolve.outputs.source_sha }}
+      artifact_prefix: ${{ needs.resolve.outputs.version }}
+    secrets:
+      GIT_ED25519_PRIVATE_KEY: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
+
+  package:
+    needs: [resolve, compile]
+    uses: ./.github/workflows/native-package.yml
+    with:
+      source_repository: ${{ vars.HANAFUBUKI_SOURCE_REPOSITORY }}
+      source_sha: ${{ needs.resolve.outputs.source_sha }}
+      artifact_prefix: ${{ needs.resolve.outputs.version }}
+      artifact_channel: release
+      updater_public_key: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+    secrets:
+      GIT_ED25519_PRIVATE_KEY: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
+      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+  updater:
+    needs: [resolve, package]
+    uses: ./.github/workflows/native-updater-sign.yml
+    with:
+      source_repository: ${{ vars.HANAFUBUKI_SOURCE_REPOSITORY }}
+      source_sha: ${{ needs.resolve.outputs.source_sha }}
+      artifact_prefix: ${{ needs.resolve.outputs.version }}
+      artifact_channel: release
+      updater_public_key: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+    secrets:
+      GIT_ED25519_PRIVATE_KEY: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+  publish:
+    name: Publish release
+    needs: [resolve, updater]
+    runs-on: ubuntu-22.04
+    concurrency:
+      group: hanafubuki-release-catalog
+      cancel-in-progress: false
+    steps:
+      - name: Configure Git
+        shell: bash
+        env:
+          DEPLOY_PRI: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
+          GIT_USERNAME: ${{ github.repository_owner }}
+          GIT_EMAIL: ${{ github.repository_owner }}@user.github.com
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh/
+          printf '%s\n' "${DEPLOY_PRI}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          git config --global user.name "${GIT_USERNAME}"
+          git config --global user.email "${GIT_EMAIL}"
+      - name: Checkout source commit
+        shell: bash
+        env:
+          SOURCE_REPOSITORY: ${{ vars.HANAFUBUKI_SOURCE_REPOSITORY }}
+          SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [[ -n "$SOURCE_REPOSITORY" && -n "$SOURCE_SHA" ]]
+          git clone --filter=blob:none --no-checkout "$SOURCE_REPOSITORY" source
+          git -C source fetch --depth=1 origin "$SOURCE_SHA"
+          git -C source checkout --detach "$SOURCE_SHA"
+          [[ "$(git -C source rev-parse HEAD)" == "$SOURCE_SHA" ]]
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: hanafubuki-release-${{ needs.resolve.outputs.version }}
+          path: release-bundles
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.9"
+          enable-cache: true
+      - name: Install release tooling
+        working-directory: source
+        run: uv sync --project scripts/release --locked
+      - name: Publish to Hugging Face and ModelScope
+        working-directory: source
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          MODELSCOPE_API_TOKEN: ${{ secrets.MODELSCOPE_API_TOKEN }}
+          HANAFUBUKI_HF_REPOSITORY: ${{ vars.HANAFUBUKI_HF_REPOSITORY }}
+          HANAFUBUKI_HF_REVISION: ${{ vars.HANAFUBUKI_HF_REVISION }}
+          HANAFUBUKI_MODELSCOPE_REPOSITORY: ${{ vars.HANAFUBUKI_MODELSCOPE_REPOSITORY }}
+          HANAFUBUKI_MODELSCOPE_REVISION: ${{ vars.HANAFUBUKI_MODELSCOPE_REVISION }}
+        run: >-
+          uv run --project scripts/release --locked python -m hanafubuki_release release
+          --repo-root .
+          --tag "${{ inputs.source_tag }}"
+          --commit "${{ needs.resolve.outputs.source_sha }}"
+          --published-at "${{ needs.resolve.outputs.published_at }}"
+          --bundles ../release-bundles

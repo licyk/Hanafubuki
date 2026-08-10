@@ -1,0 +1,375 @@
+name: Native packaging and optional platform signing
+
+on:
+  workflow_call:
+    inputs:
+      source_repository:
+        required: true
+        type: string
+      source_sha:
+        required: true
+        type: string
+      artifact_prefix:
+        required: true
+        type: string
+      artifact_channel:
+        required: true
+        type: string
+      updater_public_key:
+        required: false
+        type: string
+        default: ""
+    secrets:
+      GIT_ED25519_PRIVATE_KEY:
+        required: true
+      WINDOWS_CERTIFICATE:
+        required: false
+      WINDOWS_CERTIFICATE_PASSWORD:
+        required: false
+      APPLE_CERTIFICATE:
+        required: false
+      APPLE_CERTIFICATE_PASSWORD:
+        required: false
+      KEYCHAIN_PASSWORD:
+        required: false
+      APPLE_ID:
+        required: false
+      APPLE_PASSWORD:
+        required: false
+      APPLE_TEAM_ID:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Package ${{ matrix.targetTriple }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            runner: windows-2022
+            targetTriple: x86_64-pc-windows-msvc
+            bundles: nsis,msi
+            binary: hanafubuki.exe
+          - platform: macos
+            runner: macos-26
+            targetTriple: aarch64-apple-darwin
+            bundles: dmg
+            binary: hanafubuki
+          - platform: macos
+            runner: macos-26-intel
+            targetTriple: x86_64-apple-darwin
+            bundles: dmg
+            binary: hanafubuki
+          - platform: linux
+            runner: ubuntu-22.04
+            targetTriple: x86_64-unknown-linux-gnu
+            bundles: appimage,deb,rpm
+            binary: hanafubuki
+          - platform: linux
+            runner: ubuntu-22.04-arm
+            targetTriple: aarch64-unknown-linux-gnu
+            bundles: appimage,deb,rpm
+            binary: hanafubuki
+    runs-on: ${{ matrix.runner }}
+    env:
+      CI: "true"
+      MICROMAMBA_TARGET_TRIPLE: ${{ matrix.targetTriple }}
+      TAURI_RELEASE_CONFIG: scripts/release/tauri.release.conf.json
+    steps:
+      - name: Configure Git
+        shell: bash
+        env:
+          DEPLOY_PRI: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
+          GIT_USERNAME: ${{ github.repository_owner }}
+          GIT_EMAIL: ${{ github.repository_owner }}@user.github.com
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh/
+          printf '%s\n' "${DEPLOY_PRI}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          git config --global user.name "${GIT_USERNAME}"
+          git config --global user.email "${GIT_EMAIL}"
+      - name: Checkout source commit
+        shell: bash
+        env:
+          SOURCE_REPOSITORY: ${{ inputs.source_repository }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [[ -n "$SOURCE_REPOSITORY" && -n "$SOURCE_SHA" ]]
+          git clone --filter=blob:none --no-checkout "$SOURCE_REPOSITORY" source
+          git -C source fetch --depth=1 origin "$SOURCE_SHA"
+          git -C source checkout --detach "$SOURCE_SHA"
+          [[ "$(git -C source rev-parse HEAD)" == "$SOURCE_SHA" ]]
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.3.13"
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+        with:
+          toolchain: "1.96.0"
+          target: ${{ matrix.targetTriple }}
+      - name: Install Linux bundling prerequisites
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libfuse2 \
+            rpm \
+            xdg-utils
+      - name: Install dependencies
+        working-directory: source
+        run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: hanafubuki-compiled-${{ inputs.artifact_prefix }}-${{ matrix.targetTriple }}
+          path: source/src-tauri/target/${{ matrix.targetTriple }}/release
+      - name: Restore executable permission
+        if: matrix.platform != 'windows'
+        shell: bash
+        working-directory: source
+        run: chmod +x "src-tauri/target/${{ matrix.targetTriple }}/release/${{ matrix.binary }}"
+      - name: Prepare bundled assets
+        working-directory: source
+        run: bun run prepare:assets
+      - name: Detect Windows platform signing credentials
+        id: windows_platform_signing
+        if: matrix.platform == 'windows'
+        shell: bash
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if [[ -n "$WINDOWS_CERTIFICATE" && -n "$WINDOWS_CERTIFICATE_PASSWORD" ]]; then
+            printf 'signed=true\n' >> "$GITHUB_OUTPUT"
+          else
+            printf 'signed=false\n' >> "$GITHUB_OUTPUT"
+            echo "Windows Authenticode credentials are incomplete; skipping platform signing."
+          fi
+      - name: Detect macOS platform signing credentials
+        id: macos_platform_signing
+        if: matrix.platform == 'macos'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [[ -n "$APPLE_CERTIFICATE" && -n "$APPLE_CERTIFICATE_PASSWORD" && -n "$KEYCHAIN_PASSWORD" && -n "$APPLE_ID" && -n "$APPLE_PASSWORD" && -n "$APPLE_TEAM_ID" ]]; then
+            printf 'signed=true\n' >> "$GITHUB_OUTPUT"
+          else
+            printf 'signed=false\n' >> "$GITHUB_OUTPUT"
+            echo "macOS signing credentials are incomplete; skipping platform signing."
+          fi
+      - name: Resolve platform signing mode
+        id: platform_signing
+        shell: bash
+        env:
+          WINDOWS_SIGNED: ${{ steps.windows_platform_signing.outputs.signed }}
+          MACOS_SIGNED: ${{ steps.macos_platform_signing.outputs.signed }}
+        run: |
+          if [[ "$WINDOWS_SIGNED" == "true" || "$MACOS_SIGNED" == "true" ]]; then
+            printf 'signed=true\n' >> "$GITHUB_OUTPUT"
+          else
+            printf 'signed=false\n' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Create updater configuration
+        if: inputs.updater_public_key != ''
+        shell: bash
+        working-directory: source
+        env:
+          UPDATER_PUBLIC_KEY: ${{ inputs.updater_public_key }}
+          PYTHONPATH: scripts/release
+        run: |
+          set -euo pipefail
+          public_key_path="$RUNNER_TEMP/hanafubuki-updater.pub"
+          config_path="$RUNNER_TEMP/tauri.updater.conf.json"
+          printf '%s' "$UPDATER_PUBLIC_KEY" > "$public_key_path"
+          python -m hanafubuki_release updater-config \
+            --public-key "$public_key_path" \
+            --output "$config_path"
+          printf 'TAURI_UPDATER_CONFIG=%s\n' "$config_path" >> "$GITHUB_ENV"
+      - name: Import Windows signing certificate
+        if: matrix.platform == 'windows' && steps.platform_signing.outputs.signed == 'true'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $certificatePath = Join-Path $env:RUNNER_TEMP "hanafubuki-certificate.pfx"
+          [IO.File]::WriteAllBytes(
+            $certificatePath,
+            [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE)
+          )
+          try {
+            $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+            $certificate = Import-PfxCertificate `
+              -FilePath $certificatePath `
+              -CertStoreLocation Cert:\CurrentUser\My `
+              -Password $password
+          } finally {
+            Remove-Item $certificatePath -Force -ErrorAction SilentlyContinue
+          }
+          if ($null -eq $certificate -or [string]::IsNullOrWhiteSpace($certificate.Thumbprint)) {
+            throw "The Windows code-signing certificate could not be imported"
+          }
+          $configPath = Join-Path $env:RUNNER_TEMP "tauri.windows.conf.json"
+          @{
+            bundle = @{
+              createUpdaterArtifacts = $true
+              windows = @{
+                certificateThumbprint = $certificate.Thumbprint
+                digestAlgorithm = "sha256"
+                timestampUrl = "http://timestamp.digicert.com"
+              }
+            }
+          } | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 $configPath
+          "TAURI_PLATFORM_CONFIG=$configPath" >> $env:GITHUB_ENV
+      - name: Import Apple signing certificate
+        if: matrix.platform == 'macos' && steps.platform_signing.outputs.signed == 'true'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          certificate_path="$RUNNER_TEMP/hanafubuki-certificate.p12"
+          keychain_path="$RUNNER_TEMP/hanafubuki-build.keychain-db"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$certificate_path"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security import "$certificate_path" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$keychain_path"
+          rm -f "$certificate_path"
+          security list-keychain -d user -s "$keychain_path"
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$keychain_path"
+          identity="$(security find-identity -v -p codesigning "$keychain_path" | sed -n '1s/.*"\(.*\)".*/\1/p')"
+          if [[ -z "$identity" ]]; then
+            echo "No Apple code-signing identity was imported." >&2
+            exit 1
+          fi
+          printf 'APPLE_SIGNING_IDENTITY=%s\n' "$identity" >> "$GITHUB_ENV"
+      - name: Bundle packages
+        shell: bash
+        working-directory: source
+        env:
+          PLATFORM_SIGNED: ${{ steps.platform_signing.outputs.signed }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          args=(
+            bun run tauri bundle --ci
+            --target "${{ matrix.targetTriple }}"
+            --bundles "${{ matrix.bundles }}"
+            --config "$TAURI_RELEASE_CONFIG"
+          )
+          if [[ -n "${TAURI_PLATFORM_CONFIG:-}" ]]; then
+            args+=(--config "$TAURI_PLATFORM_CONFIG")
+          fi
+          if [[ -n "${TAURI_UPDATER_CONFIG:-}" ]]; then
+            args+=(--config "$TAURI_UPDATER_CONFIG")
+          fi
+          if [[ "$PLATFORM_SIGNED" != "true" ]]; then
+            args+=(--no-sign)
+          fi
+          "${args[@]}"
+      - name: Build Windows portable archive
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        working-directory: source
+        env:
+          PYTHONPATH: scripts/release
+        run: |
+          $ErrorActionPreference = "Stop"
+          $releaseRoot = "src-tauri/target/${{ matrix.targetTriple }}/release"
+          $version = (Get-Content "src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json).version
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw "Tauri version is missing"
+          }
+          python -m hanafubuki_release build-windows-portable `
+            --executable "$releaseRoot/${{ matrix.binary }}" `
+            --resources-root "src-tauri/generated" `
+            --output "$releaseRoot/bundle/portable/Hanafubuki-$version-windows-x86_64-portable.zip"
+      - name: Verify Windows signatures
+        if: matrix.platform == 'windows' && steps.platform_signing.outputs.signed == 'true'
+        shell: pwsh
+        working-directory: source
+        run: |
+          $ErrorActionPreference = "Stop"
+          $bundleRoot = "src-tauri/target/${{ matrix.targetTriple }}/release/bundle"
+          $installers = @(
+            Get-ChildItem $bundleRoot -Recurse -File |
+              Where-Object { $_.Extension -in @(".exe", ".msi") }
+          )
+          if ($installers.Count -ne 2) {
+            throw "Expected one NSIS installer and one MSI installer"
+          }
+          foreach ($installer in $installers) {
+            & signtool.exe verify /pa /all $installer.FullName
+            if ($LASTEXITCODE -ne 0) {
+              throw "Authenticode verification failed for $($installer.Name)"
+            }
+          }
+          $archives = @(Get-ChildItem "$bundleRoot/portable" -File -Filter "*.zip")
+          if ($archives.Count -ne 1) {
+            throw "Expected exactly one Windows portable archive"
+          }
+          $inspectionRoot = Join-Path $env:RUNNER_TEMP "hanafubuki-portable-signature"
+          Expand-Archive -LiteralPath $archives[0].FullName -DestinationPath $inspectionRoot
+          $portableExecutable = Join-Path $inspectionRoot "Hanafubuki/Hanafubuki.exe"
+          & signtool.exe verify /pa /all $portableExecutable
+          if ($LASTEXITCODE -ne 0) {
+            throw "Authenticode verification failed for the portable executable"
+          }
+      - name: Verify macOS signing and notarization
+        if: matrix.platform == 'macos' && steps.platform_signing.outputs.signed == 'true'
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          bundle_root="src-tauri/target/${{ matrix.targetTriple }}/release/bundle"
+          app="$(find "$bundle_root/macos" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          dmg="$(find "$bundle_root/dmg" -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          [[ -n "$app" && -n "$dmg" ]]
+          codesign --verify --deep --strict --verbose=2 "$app"
+          xcrun stapler validate "$app"
+          xcrun stapler validate "$dmg"
+      - name: Record signing status
+        shell: bash
+        working-directory: source
+        run: |
+          status_path="src-tauri/target/${{ matrix.targetTriple }}/release/bundle/signing-status.json"
+          printf '%s\n' '{"schemaVersion":2,"platform":"${{ matrix.platform }}","targetTriple":"${{ matrix.targetTriple }}","platformSigned":${{ steps.platform_signing.outputs.signed }},"updaterSigned":false}' > "$status_path"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hanafubuki-${{ inputs.artifact_channel }}-${{ inputs.artifact_prefix }}-${{ matrix.targetTriple }}
+          path: source/src-tauri/target/${{ matrix.targetTriple }}/release/bundle
+          if-no-files-found: error
+          retention-days: 1
