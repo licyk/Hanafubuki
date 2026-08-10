@@ -54,12 +54,12 @@ jobs:
           - platform: macos
             runner: macos-26
             targetTriple: aarch64-apple-darwin
-            bundles: dmg
+            bundles: app,dmg
             binary: hanafubuki
           - platform: macos
             runner: macos-26-intel
             targetTriple: x86_64-apple-darwin
-            bundles: dmg
+            bundles: app,dmg
             binary: hanafubuki
           - platform: linux
             runner: ubuntu-22.04
