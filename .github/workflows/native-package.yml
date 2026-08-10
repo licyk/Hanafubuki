@@ -297,6 +297,33 @@ jobs:
             args+=(--no-sign)
           fi
           "${args[@]}"
+      - name: Ensure macOS updater archive
+        if: matrix.platform == 'macos'
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          macos_root="src-tauri/target/${{ matrix.targetTriple }}/release/bundle/macos"
+          shopt -s nullglob
+          apps=("$macos_root"/*.app)
+          archives=("$macos_root"/*.app.tar.gz)
+          shopt -u nullglob
+          if [[ "${#apps[@]}" -ne 1 ]]; then
+            echo "Expected exactly one macOS app bundle, found ${#apps[@]}." >&2
+            exit 1
+          fi
+          if [[ "${#archives[@]}" -gt 1 ]]; then
+            echo "Expected at most one macOS updater archive, found ${#archives[@]}." >&2
+            exit 1
+          fi
+          if [[ "${#archives[@]}" -eq 0 ]]; then
+            app_name="$(basename "${apps[0]}")"
+            COPYFILE_DISABLE=1 tar -czf "$macos_root/${app_name}.tar.gz" \
+              -C "$macos_root" \
+              "$app_name"
+          fi
+          archives=("$macos_root"/*.app.tar.gz)
+          [[ "${#archives[@]}" -eq 1 && -s "${archives[0]}" ]]
       - name: Build Windows portable archive
         if: matrix.platform == 'windows'
         shell: pwsh
