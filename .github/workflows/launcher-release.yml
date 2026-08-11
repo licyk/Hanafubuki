@@ -1,0 +1,282 @@
+name: Hanafubuki launcher release
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Development branch or commit to publish
+        required: false
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    name: Resolve launcher source
+    runs-on: ubuntu-22.04
+    outputs:
+      source_sha: ${{ steps.source.outputs.source_sha }}
+      version: ${{ steps.launcher.outputs.version }}
+    steps:
+      - name: Configure Git
+        shell: bash
+        env:
+          DEPLOY_PRI: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
+          GIT_USERNAME: ${{ github.repository_owner }}
+          GIT_EMAIL: ${{ github.repository_owner }}@user.github.com
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh/
+          printf '%s\n' "${DEPLOY_PRI}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          git config --global user.name "${GIT_USERNAME}"
+          git config --global user.email "${GIT_EMAIL}"
+      - name: Resolve immutable source commit
+        id: source
+        shell: bash
+        env:
+          SOURCE_REPOSITORY: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SOURCE_REPOSITORY" || -z "$SOURCE_REF" || "$SOURCE_REF" == -* ]]; then
+            echo "The source repository and a branch or commit source_ref are required." >&2
+            exit 1
+          fi
+          git clone --filter=blob:none --no-checkout "$SOURCE_REPOSITORY" source
+          if [[ "$SOURCE_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            git -C source fetch --depth=1 origin "$SOURCE_REF"
+          else
+            git check-ref-format --branch "$SOURCE_REF"
+            git -C source fetch --depth=1 origin "refs/heads/$SOURCE_REF"
+          fi
+          git -C source checkout --detach FETCH_HEAD
+          source_sha="$(git -C source rev-parse HEAD)"
+          if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "The source ref did not resolve to a full Git commit." >&2
+            exit 1
+          fi
+          printf 'source_sha=%s\n' "$source_sha" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.9"
+          enable-cache: true
+      - name: Install release tooling
+        working-directory: source
+        run: uv sync --project scripts/release --locked
+      - name: Validate launcher version
+        id: launcher
+        working-directory: source
+        run: >-
+          uv run --project scripts/release --locked python -m hanafubuki_release validate-launcher
+          --repo-root .
+          --commit "${{ steps.source.outputs.source_sha }}"
+          --github-output "$GITHUB_OUTPUT"
+
+  build:
+    name: Build launcher ${{ matrix.targetTriple }}
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            runner: windows-2022
+            targetTriple: x86_64-pc-windows-msvc
+            binary: hanafubuki-launcher.exe
+            filename: hanafubuki-launcher-windows-x86_64.zip
+          - platform: macos
+            runner: macos-26
+            targetTriple: aarch64-apple-darwin
+            binary: hanafubuki-launcher
+            filename: hanafubuki-launcher-macos-aarch64.tar.gz
+          - platform: macos
+            runner: macos-26-intel
+            targetTriple: x86_64-apple-darwin
+            binary: hanafubuki-launcher
+            filename: hanafubuki-launcher-macos-x86_64.tar.gz
+          - platform: linux
+            runner: ubuntu-22.04
+            targetTriple: x86_64-unknown-linux-gnu
+            binary: hanafubuki-launcher
+            filename: hanafubuki-launcher-linux-x86_64.tar.gz
+          - platform: linux
+            runner: ubuntu-22.04-arm
+            targetTriple: aarch64-unknown-linux-gnu
+            binary: hanafubuki-launcher
+            filename: hanafubuki-launcher-linux-aarch64.tar.gz
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Configure Git
+        shell: bash
+        env:
+          DEPLOY_PRI: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
+          GIT_USERNAME: ${{ github.repository_owner }}
+          GIT_EMAIL: ${{ github.repository_owner }}@user.github.com
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh/
+          printf '%s\n' "${DEPLOY_PRI}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          git config --global user.name "${GIT_USERNAME}"
+          git config --global user.email "${GIT_EMAIL}"
+      - name: Checkout source commit
+        shell: bash
+        env:
+          SOURCE_REPOSITORY: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
+          SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [[ -n "$SOURCE_REPOSITORY" && "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git clone --filter=blob:none --no-checkout "$SOURCE_REPOSITORY" source
+          git -C source fetch --depth=1 origin "$SOURCE_SHA"
+          git -C source checkout --detach "$SOURCE_SHA"
+          [[ "$(git -C source rev-parse HEAD)" == "$SOURCE_SHA" ]]
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+        with:
+          toolchain: "1.96.0"
+          target: ${{ matrix.targetTriple }}
+      - name: Install Linux launcher prerequisites
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libxkbcommon-dev
+      - name: Compile launcher
+        working-directory: source
+        run: >-
+          cargo build
+          --manifest-path launcher/Cargo.toml
+          --release
+          --locked
+          --target "${{ matrix.targetTriple }}"
+      - name: Package Windows launcher
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        working-directory: source
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force launcher-handoff | Out-Null
+          $binary = "launcher/target/${{ matrix.targetTriple }}/release/${{ matrix.binary }}"
+          Compress-Archive -LiteralPath $binary -DestinationPath "launcher-handoff/${{ matrix.filename }}"
+      - name: Package macOS launcher
+        if: matrix.platform == 'macos'
+        shell: bash
+        working-directory: source
+        env:
+          LAUNCHER_VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          app_root="$RUNNER_TEMP/Hanafubuki Launcher.app"
+          mkdir -p "$app_root/Contents/MacOS" "$app_root/Contents/Resources" launcher-handoff
+          cp "launcher/target/${{ matrix.targetTriple }}/release/${{ matrix.binary }}" \
+            "$app_root/Contents/MacOS/hanafubuki-launcher"
+          cp src-tauri/icons/icon.icns "$app_root/Contents/Resources/icon.icns"
+          chmod 755 "$app_root/Contents/MacOS/hanafubuki-launcher"
+          cat > "$app_root/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleDisplayName</key><string>Hanafubuki Launcher</string>
+            <key>CFBundleExecutable</key><string>hanafubuki-launcher</string>
+            <key>CFBundleIconFile</key><string>icon.icns</string>
+            <key>CFBundleIdentifier</key><string>org.licyk.hanafubuki.launcher</string>
+            <key>CFBundleName</key><string>Hanafubuki Launcher</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>${LAUNCHER_VERSION}</string>
+            <key>CFBundleVersion</key><string>${LAUNCHER_VERSION}</string>
+          </dict>
+          </plist>
+          EOF
+          plutil -lint "$app_root/Contents/Info.plist"
+          tar -C "$RUNNER_TEMP" -czf "launcher-handoff/${{ matrix.filename }}" \
+            "Hanafubuki Launcher.app"
+      - name: Package Linux launcher
+        if: matrix.platform == 'linux'
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          package_root="$RUNNER_TEMP/hanafubuki-launcher-package"
+          mkdir -p "$package_root" launcher-handoff
+          cp "launcher/target/${{ matrix.targetTriple }}/release/${{ matrix.binary }}" \
+            "$package_root/hanafubuki-launcher"
+          chmod 755 "$package_root/hanafubuki-launcher"
+          tar -C "$package_root" -czf "launcher-handoff/${{ matrix.filename }}" \
+            hanafubuki-launcher
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hanafubuki-launcher-${{ needs.resolve.outputs.version }}-${{ matrix.targetTriple }}
+          path: source/launcher-handoff/${{ matrix.filename }}
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish launcher
+    needs: [resolve, build]
+    runs-on: ubuntu-22.04
+    concurrency:
+      group: hanafubuki-launcher-release
+      cancel-in-progress: false
+    steps:
+      - name: Configure Git
+        shell: bash
+        env:
+          DEPLOY_PRI: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
+          GIT_USERNAME: ${{ github.repository_owner }}
+          GIT_EMAIL: ${{ github.repository_owner }}@user.github.com
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh/
+          printf '%s\n' "${DEPLOY_PRI}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          git config --global user.name "${GIT_USERNAME}"
+          git config --global user.email "${GIT_EMAIL}"
+      - name: Checkout source commit
+        shell: bash
+        env:
+          SOURCE_REPOSITORY: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
+          SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [[ -n "$SOURCE_REPOSITORY" && "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git clone --filter=blob:none --no-checkout "$SOURCE_REPOSITORY" source
+          git -C source fetch --depth=1 origin "$SOURCE_SHA"
+          git -C source checkout --detach "$SOURCE_SHA"
+          [[ "$(git -C source rev-parse HEAD)" == "$SOURCE_SHA" ]]
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: hanafubuki-launcher-${{ needs.resolve.outputs.version }}-*
+          path: launcher-bundles
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.9"
+          enable-cache: true
+      - name: Install release tooling
+        working-directory: source
+        run: uv sync --project scripts/release --locked
+      - name: Publish launcher to Hugging Face and ModelScope
+        working-directory: source
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          MODELSCOPE_API_TOKEN: ${{ secrets.MODELSCOPE_API_TOKEN }}
+          HANAFUBUKI_HF_REPOSITORY: ${{ secrets.HANAFUBUKI_HF_REPOSITORY }}
+          HANAFUBUKI_HF_REVISION: ${{ secrets.HANAFUBUKI_HF_REVISION }}
+          HANAFUBUKI_MODELSCOPE_REPOSITORY: ${{ secrets.HANAFUBUKI_MODELSCOPE_REPOSITORY }}
+          HANAFUBUKI_MODELSCOPE_REVISION: ${{ secrets.HANAFUBUKI_MODELSCOPE_REVISION }}
+        run: >-
+          uv run --project scripts/release --locked python -m hanafubuki_release release-launcher
+          --repo-root .
+          --commit "${{ needs.resolve.outputs.source_sha }}"
+          --bundles ../launcher-bundles
