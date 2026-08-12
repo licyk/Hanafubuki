@@ -375,7 +375,7 @@ jobs:
           set -euo pipefail
           bundle_root="src-tauri/target/${{ matrix.targetTriple }}/release/bundle"
           target_root="$RUNNER_TEMP/hanafubuki-target-${{ matrix.targetTriple }}"
-          version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          version="$(python -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("src-tauri/Cargo.toml").read_text(encoding="utf-8"))["package"]["version"])')"
           single_file() {
             local directory="$1"
             local pattern="$2"
