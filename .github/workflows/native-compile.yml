@@ -14,6 +14,8 @@ on:
         required: true
       GIT_ED25519_PRIVATE_KEY:
         required: true
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
 
 permissions:
   contents: read
@@ -98,6 +100,8 @@ jobs:
       - name: Compile application
         shell: bash
         working-directory: source
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           bun run tauri build --ci \
