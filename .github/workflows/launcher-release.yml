@@ -151,14 +151,8 @@ jobs:
       - name: Compile launcher
         working-directory: source
         shell: bash
-        env:
-          HANAFUBUKI_LAUNCHER_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
         run: |
           set -euo pipefail
-          if [[ -z "$HANAFUBUKI_LAUNCHER_UPDATER_PUBLIC_KEY" ]]; then
-            echo "TAURI_UPDATER_PUBLIC_KEY is required to build the self-updating launcher." >&2
-            exit 1
-          fi
           cargo build \
             --manifest-path launcher/Cargo.toml \
             --release \
@@ -286,12 +280,11 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
           LAUNCHER_VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           set -euo pipefail
-          if [[ -z "$TAURI_SIGNING_PRIVATE_KEY" || -z "$TAURI_UPDATER_PUBLIC_KEY" ]]; then
-            echo "The launcher release requires complete updater signing credentials." >&2
+          if [[ -z "$TAURI_SIGNING_PRIVATE_KEY" ]]; then
+            echo "The launcher release requires the updater signing private key." >&2
             exit 1
           fi
           sign_one() {

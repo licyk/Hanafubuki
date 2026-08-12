@@ -17,8 +17,6 @@ on:
         required: true
       GIT_ED25519_PRIVATE_KEY:
         required: true
-      TAURI_UPDATER_PUBLIC_KEY:
-        required: false
       WINDOWS_CERTIFICATE:
         required: false
       WINDOWS_CERTIFICATE_PASSWORD:
@@ -75,8 +73,6 @@ jobs:
     env:
       CI: "true"
       MICROMAMBA_TARGET_TRIPLE: ${{ matrix.targetTriple }}
-      TAURI_RELEASE_CONFIG: scripts/release/tauri.release.conf.json
-      UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
     steps:
       - name: Configure Git
         shell: bash
@@ -185,24 +181,6 @@ jobs:
           else
             printf 'signed=false\n' >> "$GITHUB_OUTPUT"
           fi
-      - name: Create updater configuration
-        if: env.UPDATER_PUBLIC_KEY != ''
-        shell: bash
-        working-directory: source
-        run: |
-          set -euo pipefail
-          config_path="$RUNNER_TEMP/tauri.updater.conf.json"
-          CONFIG_PATH="$config_path" node --input-type=module --eval '
-            import { writeFileSync } from "node:fs";
-            const pubkey = process.env.UPDATER_PUBLIC_KEY?.trim();
-            if (!pubkey) throw new Error("Updater public key must not be empty");
-            writeFileSync(
-              process.env.CONFIG_PATH,
-              `${JSON.stringify({ plugins: { updater: { pubkey } } })}\n`,
-              "utf8",
-            );
-          '
-          printf 'TAURI_UPDATER_CONFIG=%s\n' "$config_path" >> "$GITHUB_ENV"
       - name: Import Windows signing certificate
         if: matrix.platform == 'windows' && steps.platform_signing.outputs.signed == 'true'
         shell: pwsh
@@ -231,7 +209,6 @@ jobs:
           $configPath = Join-Path $env:RUNNER_TEMP "tauri.windows.conf.json"
           @{
             bundle = @{
-              createUpdaterArtifacts = $true
               windows = @{
                 certificateThumbprint = $certificate.Thumbprint
                 digestAlgorithm = "sha256"
@@ -288,13 +265,9 @@ jobs:
             bun run tauri bundle --ci
             --target "${{ matrix.targetTriple }}"
             --bundles "${{ matrix.bundles }}"
-            --config "$TAURI_RELEASE_CONFIG"
           )
           if [[ -n "${TAURI_PLATFORM_CONFIG:-}" ]]; then
             args+=(--config "$TAURI_PLATFORM_CONFIG")
-          fi
-          if [[ -n "${TAURI_UPDATER_CONFIG:-}" ]]; then
-            args+=(--config "$TAURI_UPDATER_CONFIG")
           fi
           if [[ "$PLATFORM_SIGNED" != "true" ]]; then
             args+=(--no-sign)

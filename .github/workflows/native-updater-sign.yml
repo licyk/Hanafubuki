@@ -17,8 +17,6 @@ on:
         required: true
       GIT_ED25519_PRIVATE_KEY:
         required: true
-      TAURI_UPDATER_PUBLIC_KEY:
-        required: false
       TAURI_SIGNING_PRIVATE_KEY:
         required: false
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
@@ -68,13 +66,12 @@ jobs:
         shell: bash
         env:
           UPDATER_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
         run: |
-          if [[ -n "$UPDATER_PRIVATE_KEY" && -n "$UPDATER_PUBLIC_KEY" ]]; then
+          if [[ -n "$UPDATER_PRIVATE_KEY" ]]; then
             printf 'signed=true\n' >> "$GITHUB_OUTPUT"
           else
             printf 'signed=false\n' >> "$GITHUB_OUTPUT"
-            echo "Updater signing credentials are incomplete; retaining unsigned updater artifacts."
+            echo "Updater signing private key is missing; retaining unsigned updater artifacts."
           fi
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         if: steps.updater_signing.outputs.signed == 'true'
