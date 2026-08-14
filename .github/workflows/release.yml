@@ -27,7 +27,7 @@ permissions:
 jobs:
   resolve:
     name: Resolve source
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-26.04
     outputs:
       source_sha: ${{ steps.source.outputs.source_sha }}
       version: ${{ steps.release.outputs.version }}
@@ -88,11 +88,11 @@ jobs:
             exit 1
           fi
           printf 'source_sha=%s\n' "$source_sha" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@v7
         if: inputs.operation == 'release'
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         if: inputs.operation == 'release'
         with:
           version: "0.11.9"
@@ -147,7 +147,7 @@ jobs:
       matrix:
         include:
           - platform: windows
-            runner: windows-2022
+            runner: windows-2025
             targetTriple: x86_64-pc-windows-msvc
             binary: hanafubuki.exe
           - platform: macos
@@ -159,11 +159,11 @@ jobs:
             targetTriple: x86_64-apple-darwin
             binary: hanafubuki
           - platform: linux
-            runner: ubuntu-22.04
+            runner: ubuntu-26.04
             targetTriple: x86_64-unknown-linux-gnu
             binary: hanafubuki
           - platform: linux
-            runner: ubuntu-22.04-arm
+            runner: ubuntu-26.04-arm
             targetTriple: aarch64-unknown-linux-gnu
             binary: hanafubuki
     runs-on: ${{ matrix.runner }}
@@ -195,7 +195,7 @@ jobs:
       matrix:
         include:
           - platform: windows
-            runner: windows-2022
+            runner: windows-2025
             targetTriple: x86_64-pc-windows-msvc
             bundles: nsis,msi
             binary: hanafubuki.exe
@@ -210,12 +210,12 @@ jobs:
             bundles: app,dmg
             binary: hanafubuki
           - platform: linux
-            runner: ubuntu-22.04
+            runner: ubuntu-26.04
             targetTriple: x86_64-unknown-linux-gnu
             bundles: appimage,deb,rpm
             binary: hanafubuki
           - platform: linux
-            runner: ubuntu-22.04-arm
+            runner: ubuntu-26.04-arm
             targetTriple: aarch64-unknown-linux-gnu
             bundles: appimage,deb,rpm
             binary: hanafubuki
@@ -252,7 +252,7 @@ jobs:
   updater:
     name: Sign updater artifacts
     needs: [resolve, package]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: ./.github/actions/checkout-source
@@ -273,7 +273,7 @@ jobs:
     name: Publish release
     needs: [resolve, updater]
     if: inputs.operation == 'release'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-26.04
     concurrency:
       group: hanafubuki-release-catalog
       cancel-in-progress: false
@@ -286,14 +286,14 @@ jobs:
           deploy_private_key: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
           git_username: ${{ github.repository_owner }}
           git_email: ${{ github.repository_owner }}@user.github.com
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@v8
         with:
           name: hanafubuki-release-${{ needs.resolve.outputs.version }}
           path: release-bundles
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: "0.11.9"
           enable-cache: true

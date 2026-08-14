@@ -48,13 +48,13 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+    - uses: actions/setup-python@v7
       with:
         python-version: "3.12"
-    - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+    - uses: oven-sh/setup-bun@v2
       with:
         bun-version: "1.3.14"
-    - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+    - uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         toolchain: "1.97.1"
         target: ${{ inputs.target_triple }}
@@ -75,7 +75,7 @@ runs:
       shell: bash
       working-directory: source
       run: bun install --frozen-lockfile
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+    - uses: actions/download-artifact@v8
       with:
         name: hanafubuki-compiled-${{ inputs.artifact_prefix }}-${{ inputs.target_triple }}
         path: source/src-tauri/target/${{ inputs.target_triple }}/release
@@ -360,7 +360,7 @@ runs:
           --target-triple "${{ inputs.target_triple }}" \
           --platform-signed "$PLATFORM_SIGNED" \
           "${sources[@]}"
-    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+    - uses: actions/upload-artifact@v7
       with:
         name: hanafubuki-${{ inputs.artifact_channel }}-${{ inputs.artifact_prefix }}-${{ inputs.target_triple }}
         path: ${{ runner.temp }}/hanafubuki-target-${{ inputs.target_triple }}
