@@ -1,0 +1,52 @@
+name: Checkout Hanafubuki source
+description: Configure Git and clone one immutable source commit.
+
+inputs:
+  source_repository:
+    description: SSH URL of the Hanafubuki source repository.
+    required: true
+  source_sha:
+    description: Full source commit SHA to check out.
+    required: true
+  deploy_private_key:
+    description: SSH private key used to read the source repository.
+    required: true
+  git_username:
+    description: Git identity name.
+    required: true
+  git_email:
+    description: Git identity email.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Configure Git
+      shell: bash
+      env:
+        DEPLOY_PRI: ${{ inputs.deploy_private_key }}
+        GIT_USERNAME: ${{ inputs.git_username }}
+        GIT_EMAIL: ${{ inputs.git_email }}
+      run: |
+        set -euo pipefail
+        mkdir -p ~/.ssh/
+        printf '%s\n' "${DEPLOY_PRI}" > ~/.ssh/id_ed25519
+        chmod 600 ~/.ssh/id_ed25519
+        ssh-keyscan github.com >> ~/.ssh/known_hosts
+        git config --global user.name "${GIT_USERNAME}"
+        git config --global user.email "${GIT_EMAIL}"
+    - name: Checkout source commit
+      shell: bash
+      env:
+        SOURCE_REPOSITORY: ${{ inputs.source_repository }}
+        SOURCE_SHA: ${{ inputs.source_sha }}
+      run: |
+        set -euo pipefail
+        if [[ -z "$SOURCE_REPOSITORY" || ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+          echo "The source repository and a full source commit are required." >&2
+          exit 1
+        fi
+        git clone --filter=blob:none --no-checkout "$SOURCE_REPOSITORY" source
+        git -C source fetch --depth=1 origin "$SOURCE_SHA"
+        git -C source checkout --detach "$SOURCE_SHA"
+        [[ "$(git -C source rev-parse HEAD)" == "$SOURCE_SHA" ]]

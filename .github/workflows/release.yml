@@ -3,9 +3,22 @@ name: Hanafubuki release
 on:
   workflow_dispatch:
     inputs:
-      source_tag:
-        description: Stable development repository tag in vX.Y.Z form
+      operation:
+        description: Release artifacts or build packages without publishing
         required: true
+        default: release
+        type: choice
+        options:
+          - release
+          - packages
+      source_tag:
+        description: Stable development repository tag in vX.Y.Z form (release only)
+        required: false
+        type: string
+      source_ref:
+        description: Development branch, tag, or commit (packages only)
+        required: false
+        default: main
         type: string
 
 permissions:
@@ -13,12 +26,14 @@ permissions:
 
 jobs:
   resolve:
-    name: Validate source release
+    name: Resolve source
     runs-on: ubuntu-22.04
     outputs:
       source_sha: ${{ steps.source.outputs.source_sha }}
       version: ${{ steps.release.outputs.version }}
       published_at: ${{ steps.release.outputs.published_at }}
+      artifact_prefix: ${{ steps.metadata.outputs.artifact_prefix }}
+      artifact_channel: ${{ steps.metadata.outputs.artifact_channel }}
     steps:
       - name: Configure Git
         shell: bash
@@ -34,39 +49,61 @@ jobs:
           ssh-keyscan github.com >> ~/.ssh/known_hosts
           git config --global user.name "${GIT_USERNAME}"
           git config --global user.email "${GIT_EMAIL}"
-      - name: Resolve immutable source tag
+      - name: Resolve immutable source commit
         id: source
         shell: bash
         env:
+          OPERATION: ${{ inputs.operation }}
           SOURCE_REPOSITORY: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
           SOURCE_TAG: ${{ inputs.source_tag }}
+          SOURCE_REF: ${{ inputs.source_ref }}
         run: |
           set -euo pipefail
-          if [[ -z "$SOURCE_REPOSITORY" || ! "$SOURCE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            echo "The source repository must be configured and source_tag must use vX.Y.Z." >&2
+          if [[ -z "$SOURCE_REPOSITORY" ]]; then
+            echo "The source repository must be configured." >&2
             exit 1
           fi
           git clone --filter=blob:none --no-checkout "$SOURCE_REPOSITORY" source
-          git -C source fetch --depth=1 origin "refs/tags/$SOURCE_TAG:refs/tags/$SOURCE_TAG"
-          git -C source checkout --detach "refs/tags/$SOURCE_TAG"
+          if [[ "$OPERATION" == "release" ]]; then
+            if [[ ! "$SOURCE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+              echo "Release source_tag must use vX.Y.Z." >&2
+              exit 1
+            fi
+            git -C source fetch --depth=1 origin "refs/tags/$SOURCE_TAG:refs/tags/$SOURCE_TAG"
+            git -C source checkout --detach "refs/tags/$SOURCE_TAG"
+          elif [[ "$OPERATION" == "packages" ]]; then
+            if [[ -z "$SOURCE_REF" || "$SOURCE_REF" == -* ]]; then
+              echo "Packages source_ref must be a non-empty branch, tag, or commit." >&2
+              exit 1
+            fi
+            git -C source fetch --depth=1 origin "$SOURCE_REF"
+            git -C source checkout --detach FETCH_HEAD
+          else
+            echo "Unsupported operation: $OPERATION" >&2
+            exit 1
+          fi
           source_sha="$(git -C source rev-parse HEAD)"
           if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "The source tag did not resolve to a full Git commit." >&2
+            echo "The source reference did not resolve to a full Git commit." >&2
             exit 1
           fi
           printf 'source_sha=%s\n' "$source_sha" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        if: inputs.operation == 'release'
         with:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        if: inputs.operation == 'release'
         with:
           version: "0.11.9"
           enable-cache: true
       - name: Install release tooling
+        if: inputs.operation == 'release'
         working-directory: source
         run: uv sync --project scripts/release --locked
       - name: Validate version and source tag
         id: release
+        if: inputs.operation == 'release'
         shell: bash
         working-directory: source
         env:
@@ -81,84 +118,174 @@ jobs:
             --commit "$SOURCE_SHA" \
             --published-at "$published_at" \
             --github-output "$GITHUB_OUTPUT"
+      - name: Resolve artifact metadata
+        id: metadata
+        shell: bash
+        env:
+          OPERATION: ${{ inputs.operation }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ "$OPERATION" == "release" ]]; then
+            if [[ -z "$VERSION" ]]; then
+              echo "Release validation did not produce a version." >&2
+              exit 1
+            fi
+            printf 'artifact_prefix=%s\n' "$VERSION" >> "$GITHUB_OUTPUT"
+            printf 'artifact_channel=release\n' >> "$GITHUB_OUTPUT"
+          else
+            printf 'artifact_prefix=%s\n' "$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+            printf 'artifact_channel=packages\n' >> "$GITHUB_OUTPUT"
+          fi
 
   compile:
+    name: Compile ${{ matrix.targetTriple }}
     needs: resolve
-    uses: ./.github/workflows/native-compile.yml
-    with:
-      source_sha: ${{ needs.resolve.outputs.source_sha }}
-      artifact_prefix: ${{ needs.resolve.outputs.version }}
-    secrets:
-      HANAFUBUKI_SOURCE_REPOSITORY: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
-      GIT_ED25519_PRIVATE_KEY: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            runner: windows-2022
+            targetTriple: x86_64-pc-windows-msvc
+            binary: hanafubuki.exe
+          - platform: macos
+            runner: macos-26
+            targetTriple: aarch64-apple-darwin
+            binary: hanafubuki
+          - platform: macos
+            runner: macos-26-intel
+            targetTriple: x86_64-apple-darwin
+            binary: hanafubuki
+          - platform: linux
+            runner: ubuntu-22.04
+            targetTriple: x86_64-unknown-linux-gnu
+            binary: hanafubuki
+          - platform: linux
+            runner: ubuntu-22.04-arm
+            targetTriple: aarch64-unknown-linux-gnu
+            binary: hanafubuki
+    runs-on: ${{ matrix.runner }}
+    env:
+      CI: "true"
+      MICROMAMBA_TARGET_TRIPLE: ${{ matrix.targetTriple }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: ./.github/actions/checkout-source
+        with:
+          source_repository: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
+          source_sha: ${{ needs.resolve.outputs.source_sha }}
+          deploy_private_key: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
+          git_username: ${{ github.repository_owner }}
+          git_email: ${{ github.repository_owner }}@user.github.com
+      - uses: ./.github/actions/compile-native
+        with:
+          platform: ${{ matrix.platform }}
+          target_triple: ${{ matrix.targetTriple }}
+          binary: ${{ matrix.binary }}
+          artifact_prefix: ${{ needs.resolve.outputs.artifact_prefix }}
+          updater_signing_private_key: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
   package:
+    name: Package ${{ matrix.targetTriple }}
     needs: [resolve, compile]
-    uses: ./.github/workflows/native-package.yml
-    with:
-      source_sha: ${{ needs.resolve.outputs.source_sha }}
-      artifact_prefix: ${{ needs.resolve.outputs.version }}
-      artifact_channel: release
-    secrets:
-      HANAFUBUKI_SOURCE_REPOSITORY: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
-      GIT_ED25519_PRIVATE_KEY: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
-      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            runner: windows-2022
+            targetTriple: x86_64-pc-windows-msvc
+            bundles: nsis,msi
+            binary: hanafubuki.exe
+          - platform: macos
+            runner: macos-26
+            targetTriple: aarch64-apple-darwin
+            bundles: app,dmg
+            binary: hanafubuki
+          - platform: macos
+            runner: macos-26-intel
+            targetTriple: x86_64-apple-darwin
+            bundles: app,dmg
+            binary: hanafubuki
+          - platform: linux
+            runner: ubuntu-22.04
+            targetTriple: x86_64-unknown-linux-gnu
+            bundles: appimage,deb,rpm
+            binary: hanafubuki
+          - platform: linux
+            runner: ubuntu-22.04-arm
+            targetTriple: aarch64-unknown-linux-gnu
+            bundles: appimage,deb,rpm
+            binary: hanafubuki
+    runs-on: ${{ matrix.runner }}
+    env:
+      CI: "true"
+      MICROMAMBA_TARGET_TRIPLE: ${{ matrix.targetTriple }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: ./.github/actions/checkout-source
+        with:
+          source_repository: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
+          source_sha: ${{ needs.resolve.outputs.source_sha }}
+          deploy_private_key: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
+          git_username: ${{ github.repository_owner }}
+          git_email: ${{ github.repository_owner }}@user.github.com
+      - uses: ./.github/actions/package-native
+        with:
+          platform: ${{ matrix.platform }}
+          target_triple: ${{ matrix.targetTriple }}
+          bundles: ${{ matrix.bundles }}
+          binary: ${{ matrix.binary }}
+          artifact_prefix: ${{ needs.resolve.outputs.artifact_prefix }}
+          artifact_channel: ${{ needs.resolve.outputs.artifact_channel }}
+          windows_certificate: ${{ secrets.WINDOWS_CERTIFICATE }}
+          windows_certificate_password: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          apple_certificate: ${{ secrets.APPLE_CERTIFICATE }}
+          apple_certificate_password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          keychain_password: ${{ secrets.KEYCHAIN_PASSWORD }}
+          apple_id: ${{ secrets.APPLE_ID }}
+          apple_password: ${{ secrets.APPLE_PASSWORD }}
+          apple_team_id: ${{ secrets.APPLE_TEAM_ID }}
 
   updater:
+    name: Sign updater artifacts
     needs: [resolve, package]
-    uses: ./.github/workflows/native-updater-sign.yml
-    with:
-      source_sha: ${{ needs.resolve.outputs.source_sha }}
-      artifact_prefix: ${{ needs.resolve.outputs.version }}
-      artifact_channel: release
-    secrets:
-      HANAFUBUKI_SOURCE_REPOSITORY: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
-      GIT_ED25519_PRIVATE_KEY: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: ./.github/actions/checkout-source
+        with:
+          source_repository: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
+          source_sha: ${{ needs.resolve.outputs.source_sha }}
+          deploy_private_key: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
+          git_username: ${{ github.repository_owner }}
+          git_email: ${{ github.repository_owner }}@user.github.com
+      - uses: ./.github/actions/sign-updater
+        with:
+          artifact_prefix: ${{ needs.resolve.outputs.artifact_prefix }}
+          artifact_channel: ${{ needs.resolve.outputs.artifact_channel }}
+          updater_signing_private_key: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          updater_signing_private_key_password: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
   publish:
     name: Publish release
     needs: [resolve, updater]
+    if: inputs.operation == 'release'
     runs-on: ubuntu-22.04
     concurrency:
       group: hanafubuki-release-catalog
       cancel-in-progress: false
     steps:
-      - name: Configure Git
-        shell: bash
-        env:
-          DEPLOY_PRI: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
-          GIT_USERNAME: ${{ github.repository_owner }}
-          GIT_EMAIL: ${{ github.repository_owner }}@user.github.com
-        run: |
-          set -euo pipefail
-          mkdir -p ~/.ssh/
-          printf '%s\n' "${DEPLOY_PRI}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan github.com >> ~/.ssh/known_hosts
-          git config --global user.name "${GIT_USERNAME}"
-          git config --global user.email "${GIT_EMAIL}"
-      - name: Checkout source commit
-        shell: bash
-        env:
-          SOURCE_REPOSITORY: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
-          SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
-        run: |
-          set -euo pipefail
-          [[ -n "$SOURCE_REPOSITORY" && -n "$SOURCE_SHA" ]]
-          git clone --filter=blob:none --no-checkout "$SOURCE_REPOSITORY" source
-          git -C source fetch --depth=1 origin "$SOURCE_SHA"
-          git -C source checkout --detach "$SOURCE_SHA"
-          [[ "$(git -C source rev-parse HEAD)" == "$SOURCE_SHA" ]]
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: ./.github/actions/checkout-source
+        with:
+          source_repository: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
+          source_sha: ${{ needs.resolve.outputs.source_sha }}
+          deploy_private_key: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
+          git_username: ${{ github.repository_owner }}
+          git_email: ${{ github.repository_owner }}@user.github.com
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: hanafubuki-release-${{ needs.resolve.outputs.version }}
