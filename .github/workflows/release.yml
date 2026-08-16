@@ -27,7 +27,7 @@ permissions:
 jobs:
   resolve:
     name: Resolve source
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-22.04
     outputs:
       source_sha: ${{ steps.source.outputs.source_sha }}
       source_tag: ${{ steps.source.outputs.source_tag }}
@@ -182,11 +182,11 @@ jobs:
             targetTriple: x86_64-apple-darwin
             binary: hanafubuki
           - platform: linux
-            runner: ubuntu-26.04
+            runner: ubuntu-22.04
             targetTriple: x86_64-unknown-linux-gnu
             binary: hanafubuki
           - platform: linux
-            runner: ubuntu-26.04-arm
+            runner: ubuntu-22.04-arm
             targetTriple: aarch64-unknown-linux-gnu
             binary: hanafubuki
     runs-on: ${{ matrix.runner }}
@@ -233,12 +233,12 @@ jobs:
             bundles: app,dmg
             binary: hanafubuki
           - platform: linux
-            runner: ubuntu-26.04
+            runner: ubuntu-22.04
             targetTriple: x86_64-unknown-linux-gnu
             bundles: appimage,deb,rpm
             binary: hanafubuki
           - platform: linux
-            runner: ubuntu-26.04-arm
+            runner: ubuntu-22.04-arm
             targetTriple: aarch64-unknown-linux-gnu
             bundles: appimage,deb,rpm
             binary: hanafubuki
@@ -275,7 +275,7 @@ jobs:
   updater:
     name: Sign updater artifacts
     needs: [resolve, package]
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/checkout-source
@@ -296,7 +296,7 @@ jobs:
     name: Publish release
     needs: [resolve, updater]
     if: inputs.operation == 'release'
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-22.04
     concurrency:
       group: hanafubuki-release-catalog
       cancel-in-progress: false

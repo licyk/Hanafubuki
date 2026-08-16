@@ -15,7 +15,7 @@ permissions:
 jobs:
   resolve:
     name: Resolve launcher source
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-22.04
     outputs:
       source_sha: ${{ steps.source.outputs.source_sha }}
       version: ${{ steps.launcher.outputs.version }}
@@ -102,12 +102,12 @@ jobs:
             binary: hanafubuki-launcher
             filename: hanafubuki-launcher-macos-x86_64.tar.gz
           - platform: linux
-            runner: ubuntu-26.04
+            runner: ubuntu-22.04
             targetTriple: x86_64-unknown-linux-gnu
             binary: hanafubuki-launcher
             filename: hanafubuki-launcher-linux-x86_64.tar.gz
           - platform: linux
-            runner: ubuntu-26.04-arm
+            runner: ubuntu-22.04-arm
             targetTriple: aarch64-unknown-linux-gnu
             binary: hanafubuki-launcher
             filename: hanafubuki-launcher-linux-aarch64.tar.gz
@@ -223,7 +223,7 @@ jobs:
   publish:
     name: Publish launcher
     needs: [resolve, build]
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-22.04
     concurrency:
       group: hanafubuki-launcher-release
       cancel-in-progress: false
