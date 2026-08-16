@@ -5,9 +5,10 @@ release tooling, schemas, and tests remain in the private development repository
 `HANAFUBUKI_SOURCE_REPOSITORY` Repository Secret.
 
 `Hanafubuki packages` builds an explicitly selected source ref without publishing it.
-`Hanafubuki release` publishes an explicitly selected stable source tag. Every job resolves and
-checks out the same immutable source commit over SSH; this repository's own commit is never used as
-the product release identity.
+`Hanafubuki release` publishes a stable source tag. A supplied `source_tag` selects that exact
+`vX.Y.Z` tag; when omitted, the workflow selects the highest stable `vX.Y.Z` tag from the
+development repository. Every job resolves and checks out the same immutable source commit over
+SSH; this repository's own commit is never used as the product release identity.
 
 `Hanafubuki launcher release` is a separate manual-only workflow. It accepts a development branch
 or commit, defaults to `main`, freezes the selected ref to one source SHA, and reads the independent

@@ -12,7 +12,7 @@ on:
           - release
           - packages
       source_tag:
-        description: Stable development repository tag in vX.Y.Z form (release only)
+        description: Stable development repository tag in vX.Y.Z form; defaults to latest (release only)
         required: false
         type: string
       source_ref:
@@ -30,6 +30,7 @@ jobs:
     runs-on: ubuntu-26.04
     outputs:
       source_sha: ${{ steps.source.outputs.source_sha }}
+      source_tag: ${{ steps.source.outputs.source_tag }}
       version: ${{ steps.release.outputs.version }}
       published_at: ${{ steps.release.outputs.published_at }}
       artifact_prefix: ${{ steps.metadata.outputs.artifact_prefix }}
@@ -65,6 +66,25 @@ jobs:
           fi
           git clone --filter=blob:none --no-checkout "$SOURCE_REPOSITORY" source
           if [[ "$OPERATION" == "release" ]]; then
+            if [[ -z "$SOURCE_TAG" ]]; then
+              remote_tags="$(git -C source ls-remote --tags --refs origin 'refs/tags/v*')"
+              SOURCE_TAG="$(
+                printf '%s\n' "$remote_tags" |
+                  awk '{
+                    sub(/^refs\/tags\//, "", $2)
+                    if ($2 ~ /^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/) {
+                      print $2
+                    }
+                  }' |
+                  sort -V |
+                  tail -n 1
+              )"
+              if [[ -z "$SOURCE_TAG" ]]; then
+                echo "The source repository does not contain a stable vX.Y.Z tag." >&2
+                exit 1
+              fi
+              echo "Resolved latest stable source tag: $SOURCE_TAG"
+            fi
             if [[ ! "$SOURCE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
               echo "Release source_tag must use vX.Y.Z." >&2
               exit 1
@@ -88,11 +108,14 @@ jobs:
             exit 1
           fi
           printf 'source_sha=%s\n' "$source_sha" >> "$GITHUB_OUTPUT"
+          if [[ "$OPERATION" == "release" ]]; then
+            printf 'source_tag=%s\n' "$SOURCE_TAG" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-python@v7
         if: inputs.operation == 'release'
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@v10.0.1
         if: inputs.operation == 'release'
         with:
           version: "0.11.9"
@@ -108,7 +131,7 @@ jobs:
         working-directory: source
         env:
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
-          SOURCE_TAG: ${{ inputs.source_tag }}
+          SOURCE_TAG: ${{ steps.source.outputs.source_tag }}
         run: |
           set -euo pipefail
           published_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
@@ -171,7 +194,7 @@ jobs:
       CI: "true"
       MICROMAMBA_TARGET_TRIPLE: ${{ matrix.targetTriple }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/checkout-source
         with:
           source_repository: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
@@ -224,7 +247,7 @@ jobs:
       CI: "true"
       MICROMAMBA_TARGET_TRIPLE: ${{ matrix.targetTriple }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/checkout-source
         with:
           source_repository: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
@@ -254,7 +277,7 @@ jobs:
     needs: [resolve, package]
     runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/checkout-source
         with:
           source_repository: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
@@ -278,7 +301,7 @@ jobs:
       group: hanafubuki-release-catalog
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/checkout-source
         with:
           source_repository: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
@@ -293,7 +316,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           version: "0.11.9"
           enable-cache: true
