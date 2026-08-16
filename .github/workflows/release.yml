@@ -335,7 +335,7 @@ jobs:
         run: >-
           uv run --project scripts/release --locked python -m hanafubuki_release release
           --repo-root .
-          --tag "${{ inputs.source_tag }}"
+          --tag "${{ needs.resolve.outputs.source_tag }}"
           --commit "${{ needs.resolve.outputs.source_sha }}"
           --published-at "${{ needs.resolve.outputs.published_at }}"
           --bundles ../release-bundles
