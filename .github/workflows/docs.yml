@@ -11,8 +11,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: github-pages
@@ -22,9 +20,6 @@ jobs:
   deploy:
     name: Build and publish website
     runs-on: ubuntu-22.04
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v6
 
@@ -76,14 +71,21 @@ jobs:
         working-directory: source
         run: bun run site:build
 
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
+      - name: Commit website files
+        shell: bash
+        env:
+          GIT_URL: git@github.com:licyk/Hanafubuki.git
+        run: |
+          set -euo pipefail
+          output_dir="${{ github.workspace }}/source/site/.output/public"
+          git -C "$output_dir" init
+          git -C "$output_dir" remote add origin "$GIT_URL"
+          git -C "$output_dir" add -A
+          git -C "$output_dir" commit -m "Website auto generated. Time: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
 
-      - name: Upload website artifact
-        uses: actions/upload-pages-artifact@v4
-        with:
-          path: source/site/.output/public
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Push website files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C "${{ github.workspace }}/source/site/.output/public" \
+            push origin HEAD:gh-pages --force
