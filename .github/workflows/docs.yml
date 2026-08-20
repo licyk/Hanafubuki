@@ -1,0 +1,89 @@
+name: Hanafubuki website
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Development branch or commit to publish
+        required: false
+        default: main
+        type: string
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build and publish website
+    runs-on: ubuntu-22.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure Git
+        shell: bash
+        env:
+          DEPLOY_PRI: ${{ secrets.GIT_ED25519_PRIVATE_KEY }}
+          GIT_USERNAME: ${{ github.repository_owner }}
+          GIT_EMAIL: ${{ github.repository_owner }}@user.github.com
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh/
+          printf '%s\n' "${DEPLOY_PRI}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          git config --global user.name "${GIT_USERNAME}"
+          git config --global user.email "${GIT_EMAIL}"
+
+      - name: Checkout source
+        shell: bash
+        env:
+          SOURCE_REPOSITORY: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SOURCE_REPOSITORY" || -z "$SOURCE_REF" || "$SOURCE_REF" == -* ]]; then
+            echo "The source repository and a branch or commit source_ref are required." >&2
+            exit 1
+          fi
+          git clone --filter=blob:none --no-checkout "$SOURCE_REPOSITORY" source
+          if [[ "$SOURCE_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            git -C source fetch --depth=1 origin "$SOURCE_REF"
+          else
+            git check-ref-format --branch "$SOURCE_REF"
+            git -C source fetch --depth=1 origin "refs/heads/$SOURCE_REF"
+          fi
+          git -C source checkout --detach FETCH_HEAD
+          git -C source rev-parse HEAD
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+
+      - name: Install locked dependencies
+        working-directory: source
+        run: bun install --frozen-lockfile
+
+      - name: Build website
+        working-directory: source
+        run: bun run site:build
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload website artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: source/site/.output/public
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
