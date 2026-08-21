@@ -69,6 +69,8 @@ jobs:
 
       - name: Build website
         working-directory: source
+        env:
+          VITE_BASE_PATH: /Hanafubuki/
         run: bun run site:build
 
       - name: Commit website files
