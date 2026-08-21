@@ -5,6 +5,9 @@ inputs:
   platform:
     description: Target platform name.
     required: true
+  architecture:
+    description: Target architecture name.
+    required: true
   target_triple:
     description: Rust target triple.
     required: true
@@ -13,6 +16,9 @@ inputs:
     required: true
   binary:
     description: Compiled executable filename.
+    required: true
+  updater_kind:
+    description: Artifact kind selected for updater signing.
     required: true
   artifact_prefix:
     description: Artifact identity shared by the release jobs.
@@ -320,8 +326,6 @@ runs:
     - name: Normalize target handoff
       shell: bash
       working-directory: source
-      env:
-        PLATFORM_SIGNED: ${{ steps.platform_signing.outputs.signed }}
       run: |
         set -euo pipefail
         bundle_root="src-tauri/target/${{ inputs.target_triple }}/release/bundle"
@@ -358,7 +362,9 @@ runs:
           --directory "$target_root" \
           --version "$version" \
           --target-triple "${{ inputs.target_triple }}" \
-          --platform-signed "$PLATFORM_SIGNED" \
+          --platform "${{ inputs.platform }}" \
+          --architecture "${{ inputs.architecture }}" \
+          --updater-kind "${{ inputs.updater_kind }}" \
           "${sources[@]}"
     - uses: actions/upload-artifact@v7
       with:

@@ -19,6 +19,7 @@ jobs:
     outputs:
       source_sha: ${{ steps.source.outputs.source_sha }}
       version: ${{ steps.launcher.outputs.version }}
+      build_matrix: ${{ steps.launcher.outputs.build_matrix }}
     steps:
       - name: Configure Git
         shell: bash
@@ -76,7 +77,6 @@ jobs:
         run: >-
           uv run --project scripts/release --locked python -m hanafubuki_release validate-launcher
           --repo-root .
-          --commit "${{ steps.source.outputs.source_sha }}"
           --github-output "$GITHUB_OUTPUT"
 
   build:
@@ -85,32 +85,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: windows
-            runner: windows-2025
-            targetTriple: x86_64-pc-windows-msvc
-            binary: hanafubuki-launcher.exe
-            filename: hanafubuki-launcher-windows-x86_64.zip
-          - platform: macos
-            runner: macos-26
-            targetTriple: aarch64-apple-darwin
-            binary: hanafubuki-launcher
-            filename: hanafubuki-launcher-macos-aarch64.tar.gz
-          - platform: macos
-            runner: macos-26-intel
-            targetTriple: x86_64-apple-darwin
-            binary: hanafubuki-launcher
-            filename: hanafubuki-launcher-macos-x86_64.tar.gz
-          - platform: linux
-            runner: ubuntu-22.04
-            targetTriple: x86_64-unknown-linux-gnu
-            binary: hanafubuki-launcher
-            filename: hanafubuki-launcher-linux-x86_64.tar.gz
-          - platform: linux
-            runner: ubuntu-22.04-arm
-            targetTriple: aarch64-unknown-linux-gnu
-            binary: hanafubuki-launcher
-            filename: hanafubuki-launcher-linux-aarch64.tar.gz
+        include: ${{ fromJSON(needs.resolve.outputs.build_matrix) }}
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Configure Git
@@ -287,26 +262,26 @@ jobs:
             echo "The launcher release requires the updater signing private key." >&2
             exit 1
           fi
-          sign_one() {
-            local target="$1"
-            local filename="$2"
-            local root="../launcher-bundles/hanafubuki-launcher-${LAUNCHER_VERSION}-${target}"
-            if [[ ! -s "$root/$filename" ]]; then
-              echo "Missing launcher archive: $root/$filename" >&2
+          shopt -s nullglob
+          found=false
+          roots=(../launcher-bundles/hanafubuki-launcher-"${LAUNCHER_VERSION}"-*)
+          for root in "${roots[@]}"; do
+            found=true
+            mapfile -d '' archives < <(find "$root" -maxdepth 1 -type f ! -name '*.sig' -print0)
+            if [[ "${#archives[@]}" -ne 1 || ! -s "${archives[0]}" ]]; then
+              echo "Launcher handoff must contain one non-empty archive: $root" >&2
               exit 1
             fi
-            bun run tauri signer sign "$root/$filename"
-            if [[ ! -s "$root/$filename.sig" ]]; then
-              echo "Launcher signer did not create $filename.sig." >&2
+            bun run tauri signer sign "${archives[0]}"
+            if [[ ! -s "${archives[0]}.sig" ]]; then
+              echo "Launcher signer did not create ${archives[0]}.sig." >&2
               exit 1
             fi
-          }
-
-          sign_one x86_64-pc-windows-msvc hanafubuki-launcher-windows-x86_64.zip
-          sign_one aarch64-apple-darwin hanafubuki-launcher-macos-aarch64.tar.gz
-          sign_one x86_64-apple-darwin hanafubuki-launcher-macos-x86_64.tar.gz
-          sign_one x86_64-unknown-linux-gnu hanafubuki-launcher-linux-x86_64.tar.gz
-          sign_one aarch64-unknown-linux-gnu hanafubuki-launcher-linux-aarch64.tar.gz
+          done
+          if [[ "$found" != "true" ]]; then
+            echo "No launcher handoffs were downloaded for signing." >&2
+            exit 1
+          fi
       - name: Publish launcher to Hugging Face and ModelScope
         working-directory: source
         env:
@@ -319,5 +294,4 @@ jobs:
         run: >-
           uv run --project scripts/release --locked python -m hanafubuki_release release-launcher
           --repo-root .
-          --commit "${{ needs.resolve.outputs.source_sha }}"
           --bundles ../launcher-bundles

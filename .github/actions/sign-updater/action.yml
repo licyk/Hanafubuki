@@ -53,10 +53,12 @@ runs:
         TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ inputs.updater_signing_private_key_password }}
       run: |
         set -euo pipefail
-        sign_one() {
-          local target="$1"
-          local root="release-bundles/hanafubuki-${{ inputs.artifact_channel }}-${{ inputs.artifact_prefix }}-${target}"
-          local filename
+        shopt -s nullglob
+        found=false
+        roots=(release-bundles/hanafubuki-${{ inputs.artifact_channel }}-${{ inputs.artifact_prefix }}-*)
+        for root in "${roots[@]}"; do
+          found=true
+          target="$(basename "$root")"
           filename="$(bun scripts/release/target-manifest.ts updater-path --directory "$root")"
           if [[ "$filename" != "$(basename "$filename")" || ! -s "$root/$filename" ]]; then
             echo "target.json selected an invalid updater artifact for ${target}." >&2
@@ -67,14 +69,11 @@ runs:
             echo "Updater signer did not create a non-empty signature for $filename." >&2
             exit 1
           fi
-          bun scripts/release/target-manifest.ts record-signature --directory "$root"
-        }
-
-        sign_one x86_64-pc-windows-msvc
-        sign_one aarch64-apple-darwin
-        sign_one x86_64-apple-darwin
-        sign_one x86_64-unknown-linux-gnu
-        sign_one aarch64-unknown-linux-gnu
+        done
+        if [[ "$found" != "true" ]]; then
+          echo "No target handoffs were downloaded for updater signing." >&2
+          exit 1
+        fi
     - uses: actions/upload-artifact@v7
       with:
         name: hanafubuki-${{ inputs.artifact_channel }}-${{ inputs.artifact_prefix }}

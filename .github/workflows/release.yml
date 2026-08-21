@@ -35,6 +35,8 @@ jobs:
       published_at: ${{ steps.release.outputs.published_at }}
       artifact_prefix: ${{ steps.metadata.outputs.artifact_prefix }}
       artifact_channel: ${{ steps.metadata.outputs.artifact_channel }}
+      compile_matrix: ${{ steps.release.outputs.compile_matrix }}
+      package_matrix: ${{ steps.release.outputs.package_matrix }}
     steps:
       - name: Configure Git
         shell: bash
@@ -112,21 +114,17 @@ jobs:
             printf 'source_tag=%s\n' "$SOURCE_TAG" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/setup-python@v7
-        if: inputs.operation == 'release'
         with:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@v10.0.1
-        if: inputs.operation == 'release'
         with:
           version: "0.11.9"
           enable-cache: true
       - name: Install release tooling
-        if: inputs.operation == 'release'
         working-directory: source
         run: uv sync --project scripts/release --locked
-      - name: Validate version and source tag
+      - name: Resolve release metadata and target matrices
         id: release
-        if: inputs.operation == 'release'
         shell: bash
         working-directory: source
         env:
@@ -168,27 +166,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: windows
-            runner: windows-2025
-            targetTriple: x86_64-pc-windows-msvc
-            binary: hanafubuki.exe
-          - platform: macos
-            runner: macos-26
-            targetTriple: aarch64-apple-darwin
-            binary: hanafubuki
-          - platform: macos
-            runner: macos-26-intel
-            targetTriple: x86_64-apple-darwin
-            binary: hanafubuki
-          - platform: linux
-            runner: ubuntu-22.04
-            targetTriple: x86_64-unknown-linux-gnu
-            binary: hanafubuki
-          - platform: linux
-            runner: ubuntu-22.04-arm
-            targetTriple: aarch64-unknown-linux-gnu
-            binary: hanafubuki
+        include: ${{ fromJSON(needs.resolve.outputs.compile_matrix) }}
     runs-on: ${{ matrix.runner }}
     env:
       CI: "true"
@@ -216,32 +194,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: windows
-            runner: windows-2025
-            targetTriple: x86_64-pc-windows-msvc
-            bundles: nsis,msi
-            binary: hanafubuki.exe
-          - platform: macos
-            runner: macos-26
-            targetTriple: aarch64-apple-darwin
-            bundles: app,dmg
-            binary: hanafubuki
-          - platform: macos
-            runner: macos-26-intel
-            targetTriple: x86_64-apple-darwin
-            bundles: app,dmg
-            binary: hanafubuki
-          - platform: linux
-            runner: ubuntu-22.04
-            targetTriple: x86_64-unknown-linux-gnu
-            bundles: appimage,deb,rpm
-            binary: hanafubuki
-          - platform: linux
-            runner: ubuntu-22.04-arm
-            targetTriple: aarch64-unknown-linux-gnu
-            bundles: appimage,deb,rpm
-            binary: hanafubuki
+        include: ${{ fromJSON(needs.resolve.outputs.package_matrix) }}
     runs-on: ${{ matrix.runner }}
     env:
       CI: "true"
@@ -258,9 +211,11 @@ jobs:
       - uses: ./.github/actions/package-native
         with:
           platform: ${{ matrix.platform }}
+          architecture: ${{ matrix.architecture }}
           target_triple: ${{ matrix.targetTriple }}
           bundles: ${{ matrix.bundles }}
           binary: ${{ matrix.binary }}
+          updater_kind: ${{ matrix.updaterKind }}
           artifact_prefix: ${{ needs.resolve.outputs.artifact_prefix }}
           artifact_channel: ${{ needs.resolve.outputs.artifact_channel }}
           windows_certificate: ${{ secrets.WINDOWS_CERTIFICATE }}
