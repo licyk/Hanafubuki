@@ -1,25 +1,34 @@
-# Hanafubuki build infrastructure
+# Hanafubuki
 
-This repository owns Hanafubuki native package and release publication workflows. Product source,
-release tooling, schemas, and tests remain in the private development repository selected by the
-`HANAFUBUKI_SOURCE_REPOSITORY` Repository Secret.
+Hanafubuki 是一款用于安装、导入、运行和维护本地生成式 AI WebUI 的跨平台桌面管理器。它将 Python、Git、启动参数、模型、扩展、版本、快照和诊断等常用能力集中在同一个桌面工作区中，让不同 WebUI 的环境准备和日常管理更加简单。
 
-`Hanafubuki packages` builds an explicitly selected source ref without publishing it.
-`Hanafubuki release` publishes a stable source tag. A supplied `source_tag` selects that exact
-`vX.Y.Z` tag; when omitted, the workflow selects the highest stable `vX.Y.Z` tag from the
-development repository. Every job resolves and checks out the same immutable source commit over
-SSH; this repository's own commit is never used as the product release identity.
+[官方网站](https://hanafubuki.netlify.app/) · [下载 Hanafubuki](https://hanafubuki.netlify.app/download) · [使用文档](https://hanafubuki.netlify.app/docs) · [问题反馈](https://github.com/licyk/Hanafubuki/issues)
 
-`Hanafubuki launcher release` is a separate manual-only workflow. It accepts a development branch
-or commit, defaults to `main`, freezes the selected ref to one source SHA, and reads the independent
-launcher version from `launcher/Cargo.toml`. It builds the five supported native targets, publishes
-them with the configured updater public key, signs every archive with the updater private key, and
-publishes each archive plus its adjacent `.sig` below `hanafubuki-launcher/releases/<version>` in
-Hugging Face and ModelScope. It then rebuilds each provider's launcher `versions.json` and
-`latest.json` from its remote files and signature contents. It does not require or create a Git tag
-and it does not alter the versioned desktop release catalogs under `hanafubuki`.
+## 主要功能
 
-Each native package job owns Tauri's platform-specific output layout and uploads one clean target
-handoff containing only canonical packages and `target.json`. The isolated Updater job signs the
-single payload declared by each manifest when credentials are present. The publisher consumes the
-five manifests directly; it never scans or filters Tauri work directories.
+- 新建、导入、扫描和管理多个 WebUI 实例
+- 为每个实例管理独立的 Python、Core 和启动配置
+- 管理 WebUI 版本、扩展、模型、PyTorch 和运行环境
+- 提供任务日志、快照、诊断和故障恢复能力
+- 内置可连接本地工具的 Agent，协助处理项目与环境任务
+
+## 支持的 WebUI
+
+目前支持：
+
+- Stable Diffusion WebUI
+- ComfyUI
+- InvokeAI
+- Fooocus
+- SD Trainer
+- Qwen TTS WebUI
+
+不同 WebUI 提供的管理能力可能有所不同，Hanafubuki 会根据实例类型和实际能力显示可用功能。
+
+## 下载与安装
+
+Hanafubuki 支持 Windows、macOS 和 Linux，并提供桌面安装包及解压即用的便携版 Launcher。下载页面会自动识别当前系统，并提供对应的安装文件：
+
+**[前往 Hanafubuki 下载页面](https://hanafubuki.netlify.app/download)**
+
+完整的安装步骤和各平台安装包说明请查看[安装文档](https://hanafubuki.netlify.app/docs/installation)。
