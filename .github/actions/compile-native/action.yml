@@ -11,8 +11,8 @@ inputs:
   binary:
     description: Compiled executable filename.
     required: true
-  artifact_prefix:
-    description: Artifact identity shared by the release jobs.
+  version:
+    description: Validated Hanafubuki release version.
     required: true
   updater_signing_private_key:
     description: Optional Tauri updater signing private key used during compilation.
@@ -56,7 +56,7 @@ runs:
           --locked
     - uses: actions/upload-artifact@v7
       with:
-        name: hanafubuki-compiled-${{ inputs.artifact_prefix }}-${{ inputs.target_triple }}
+        name: hanafubuki-compiled-${{ inputs.version }}-${{ inputs.target_triple }}
         path: source/src-tauri/target/${{ inputs.target_triple }}/release/${{ inputs.binary }}
         if-no-files-found: error
         retention-days: 1

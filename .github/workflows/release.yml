@@ -3,22 +3,9 @@ name: Hanafubuki release
 on:
   workflow_dispatch:
     inputs:
-      operation:
-        description: Release artifacts or build packages without publishing
-        required: true
-        default: release
-        type: choice
-        options:
-          - release
-          - packages
       source_tag:
-        description: Stable development repository tag in vX.Y.Z form; defaults to latest (release only)
+        description: Stable development repository tag in vX.Y.Z form; defaults to latest
         required: false
-        type: string
-      source_ref:
-        description: Development branch, tag, or commit (packages only)
-        required: false
-        default: main
         type: string
 
 permissions:
@@ -33,8 +20,6 @@ jobs:
       source_tag: ${{ steps.source.outputs.source_tag }}
       version: ${{ steps.release.outputs.version }}
       published_at: ${{ steps.release.outputs.published_at }}
-      artifact_prefix: ${{ steps.metadata.outputs.artifact_prefix }}
-      artifact_channel: ${{ steps.metadata.outputs.artifact_channel }}
       compile_matrix: ${{ steps.release.outputs.compile_matrix }}
       package_matrix: ${{ steps.release.outputs.package_matrix }}
     steps:
@@ -56,10 +41,8 @@ jobs:
         id: source
         shell: bash
         env:
-          OPERATION: ${{ inputs.operation }}
           SOURCE_REPOSITORY: ${{ secrets.HANAFUBUKI_SOURCE_REPOSITORY }}
           SOURCE_TAG: ${{ inputs.source_tag }}
-          SOURCE_REF: ${{ inputs.source_ref }}
         run: |
           set -euo pipefail
           if [[ -z "$SOURCE_REPOSITORY" ]]; then
@@ -67,52 +50,38 @@ jobs:
             exit 1
           fi
           git clone --filter=blob:none --no-checkout "$SOURCE_REPOSITORY" source
-          if [[ "$OPERATION" == "release" ]]; then
+          if [[ -z "$SOURCE_TAG" ]]; then
+            remote_tags="$(git -C source ls-remote --tags --refs origin 'refs/tags/v*')"
+            SOURCE_TAG="$(
+              printf '%s\n' "$remote_tags" |
+                awk '{
+                  sub(/^refs\/tags\//, "", $2)
+                  if ($2 ~ /^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/) {
+                    print $2
+                  }
+                }' |
+                sort -V |
+                tail -n 1
+            )"
             if [[ -z "$SOURCE_TAG" ]]; then
-              remote_tags="$(git -C source ls-remote --tags --refs origin 'refs/tags/v*')"
-              SOURCE_TAG="$(
-                printf '%s\n' "$remote_tags" |
-                  awk '{
-                    sub(/^refs\/tags\//, "", $2)
-                    if ($2 ~ /^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/) {
-                      print $2
-                    }
-                  }' |
-                  sort -V |
-                  tail -n 1
-              )"
-              if [[ -z "$SOURCE_TAG" ]]; then
-                echo "The source repository does not contain a stable vX.Y.Z tag." >&2
-                exit 1
-              fi
-              echo "Resolved latest stable source tag: $SOURCE_TAG"
-            fi
-            if [[ ! "$SOURCE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-              echo "Release source_tag must use vX.Y.Z." >&2
+              echo "The source repository does not contain a stable vX.Y.Z tag." >&2
               exit 1
             fi
-            git -C source fetch --depth=1 origin "refs/tags/$SOURCE_TAG:refs/tags/$SOURCE_TAG"
-            git -C source checkout --detach "refs/tags/$SOURCE_TAG"
-          elif [[ "$OPERATION" == "packages" ]]; then
-            if [[ -z "$SOURCE_REF" || "$SOURCE_REF" == -* ]]; then
-              echo "Packages source_ref must be a non-empty branch, tag, or commit." >&2
-              exit 1
-            fi
-            git -C source fetch --depth=1 origin "$SOURCE_REF"
-            git -C source checkout --detach FETCH_HEAD
-          else
-            echo "Unsupported operation: $OPERATION" >&2
+            echo "Resolved latest stable source tag: $SOURCE_TAG"
+          fi
+          if [[ ! "$SOURCE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Release source_tag must use vX.Y.Z." >&2
             exit 1
           fi
+          git -C source fetch --depth=1 origin "refs/tags/$SOURCE_TAG:refs/tags/$SOURCE_TAG"
+          git -C source checkout --detach "refs/tags/$SOURCE_TAG"
           source_sha="$(git -C source rev-parse HEAD)"
           if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
             echo "The source reference did not resolve to a full Git commit." >&2
             exit 1
           fi
           printf 'source_sha=%s\n' "$source_sha" >> "$GITHUB_OUTPUT"
-          if [[ "$OPERATION" == "release" ]]; then
-            printf 'source_tag=%s\n' "$SOURCE_TAG" >> "$GITHUB_OUTPUT"
-          fi
+          printf 'source_tag=%s\n' "$SOURCE_TAG" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -139,27 +108,6 @@ jobs:
             --commit "$SOURCE_SHA" \
             --published-at "$published_at" \
             --github-output "$GITHUB_OUTPUT"
-      - name: Resolve artifact metadata
-        id: metadata
-        shell: bash
-        env:
-          OPERATION: ${{ inputs.operation }}
-          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
-          VERSION: ${{ steps.release.outputs.version }}
-        run: |
-          set -euo pipefail
-          if [[ "$OPERATION" == "release" ]]; then
-            if [[ -z "$VERSION" ]]; then
-              echo "Release validation did not produce a version." >&2
-              exit 1
-            fi
-            printf 'artifact_prefix=%s\n' "$VERSION" >> "$GITHUB_OUTPUT"
-            printf 'artifact_channel=release\n' >> "$GITHUB_OUTPUT"
-          else
-            printf 'artifact_prefix=%s\n' "$SOURCE_SHA" >> "$GITHUB_OUTPUT"
-            printf 'artifact_channel=packages\n' >> "$GITHUB_OUTPUT"
-          fi
-
   compile:
     name: Compile ${{ matrix.targetTriple }}
     needs: resolve
@@ -185,7 +133,7 @@ jobs:
           platform: ${{ matrix.platform }}
           target_triple: ${{ matrix.targetTriple }}
           binary: ${{ matrix.binary }}
-          artifact_prefix: ${{ needs.resolve.outputs.artifact_prefix }}
+          version: ${{ needs.resolve.outputs.version }}
           updater_signing_private_key: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
   package:
@@ -216,8 +164,7 @@ jobs:
           bundles: ${{ matrix.bundles }}
           binary: ${{ matrix.binary }}
           updater_kind: ${{ matrix.updaterKind }}
-          artifact_prefix: ${{ needs.resolve.outputs.artifact_prefix }}
-          artifact_channel: ${{ needs.resolve.outputs.artifact_channel }}
+          version: ${{ needs.resolve.outputs.version }}
           windows_certificate: ${{ secrets.WINDOWS_CERTIFICATE }}
           windows_certificate_password: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
           apple_certificate: ${{ secrets.APPLE_CERTIFICATE }}
@@ -242,15 +189,13 @@ jobs:
           git_email: ${{ github.repository_owner }}@user.github.com
       - uses: ./.github/actions/sign-updater
         with:
-          artifact_prefix: ${{ needs.resolve.outputs.artifact_prefix }}
-          artifact_channel: ${{ needs.resolve.outputs.artifact_channel }}
+          version: ${{ needs.resolve.outputs.version }}
           updater_signing_private_key: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           updater_signing_private_key_password: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
   publish:
     name: Publish release
     needs: [resolve, updater]
-    if: inputs.operation == 'release'
     runs-on: ubuntu-22.04
     concurrency:
       group: hanafubuki-release-catalog

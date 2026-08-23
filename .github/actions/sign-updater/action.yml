@@ -2,11 +2,8 @@ name: Sign updater artifacts
 description: Optionally sign and aggregate the updater artifacts for all native targets.
 
 inputs:
-  artifact_prefix:
-    description: Artifact identity shared by the release jobs.
-    required: true
-  artifact_channel:
-    description: Artifact channel, either release or packages.
+  version:
+    description: Validated Hanafubuki release version.
     required: true
   updater_signing_private_key:
     description: Optional Tauri updater signing private key.
@@ -20,7 +17,7 @@ runs:
   steps:
     - uses: actions/download-artifact@v8
       with:
-        pattern: hanafubuki-${{ inputs.artifact_channel }}-${{ inputs.artifact_prefix }}-*
+        pattern: hanafubuki-release-${{ inputs.version }}-*
         path: source/release-bundles
         merge-multiple: false
     - name: Detect updater signing credentials
@@ -55,7 +52,7 @@ runs:
         set -euo pipefail
         shopt -s nullglob
         found=false
-        roots=(release-bundles/hanafubuki-${{ inputs.artifact_channel }}-${{ inputs.artifact_prefix }}-*)
+        roots=(release-bundles/hanafubuki-release-${{ inputs.version }}-*)
         for root in "${roots[@]}"; do
           found=true
           target="$(basename "$root")"
@@ -76,7 +73,7 @@ runs:
         fi
     - uses: actions/upload-artifact@v7
       with:
-        name: hanafubuki-${{ inputs.artifact_channel }}-${{ inputs.artifact_prefix }}
+        name: hanafubuki-release-${{ inputs.version }}
         path: source/release-bundles
         if-no-files-found: error
         retention-days: 30

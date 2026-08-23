@@ -1,5 +1,10 @@
 # Hanafubuki
 
+[![Hanafubuki development](https://github.com/licyk/Hanafubuki/actions/workflows/development.yml/badge.svg)](https://github.com/licyk/Hanafubuki/actions/workflows/development.yml)
+[![Hanafubuki release](https://github.com/licyk/Hanafubuki/actions/workflows/release.yml/badge.svg)](https://github.com/licyk/Hanafubuki/actions/workflows/release.yml)
+[![Hanafubuki launcher release](https://github.com/licyk/Hanafubuki/actions/workflows/launcher-release.yml/badge.svg)](https://github.com/licyk/Hanafubuki/actions/workflows/launcher-release.yml)
+[![Hanafubuki website](https://github.com/licyk/Hanafubuki/actions/workflows/docs.yml/badge.svg)](https://github.com/licyk/Hanafubuki/actions/workflows/docs.yml)
+
 Hanafubuki 是一款用于安装、导入、运行和维护本地生成式 AI WebUI 的跨平台桌面管理器。它将 Python、Git、启动参数、模型、扩展、版本、快照和诊断等常用能力集中在同一个桌面工作区中，让不同 WebUI 的环境准备和日常管理更加简单。
 
 [官方网站](https://hanafubuki.netlify.app/) · [下载 Hanafubuki](https://hanafubuki.netlify.app/download) · [使用文档](https://hanafubuki.netlify.app/docs) · [问题反馈](https://github.com/licyk/Hanafubuki/issues)

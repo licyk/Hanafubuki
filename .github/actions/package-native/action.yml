@@ -20,11 +20,8 @@ inputs:
   updater_kind:
     description: Artifact kind selected for updater signing.
     required: true
-  artifact_prefix:
-    description: Artifact identity shared by the release jobs.
-    required: true
-  artifact_channel:
-    description: Artifact channel, either release or packages.
+  version:
+    description: Validated Hanafubuki release version.
     required: true
   windows_certificate:
     description: Optional base64-encoded Windows signing certificate.
@@ -83,7 +80,7 @@ runs:
       run: bun install --frozen-lockfile
     - uses: actions/download-artifact@v8
       with:
-        name: hanafubuki-compiled-${{ inputs.artifact_prefix }}-${{ inputs.target_triple }}
+        name: hanafubuki-compiled-${{ inputs.version }}-${{ inputs.target_triple }}
         path: source/src-tauri/target/${{ inputs.target_triple }}/release
     - name: Restore executable permission
       if: inputs.platform != 'windows'
@@ -368,7 +365,7 @@ runs:
           "${sources[@]}"
     - uses: actions/upload-artifact@v7
       with:
-        name: hanafubuki-${{ inputs.artifact_channel }}-${{ inputs.artifact_prefix }}-${{ inputs.target_triple }}
+        name: hanafubuki-release-${{ inputs.version }}-${{ inputs.target_triple }}
         path: ${{ runner.temp }}/hanafubuki-target-${{ inputs.target_triple }}
         if-no-files-found: error
         retention-days: 1
