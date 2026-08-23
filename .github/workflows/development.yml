@@ -100,23 +100,8 @@ jobs:
 
       - name: Check repository
         working-directory: source
-        run: |
-          bun scripts/frontend-checks.ts
-          bunx vue-tsc --noEmit
-          bun run check:rust
-          bun run check:launcher
-          bun run site:check
+        run: bun run check
 
       - name: Test repository
         working-directory: source
-        run: |
-          bunx vitest run
-          bun run test:rust
-          bun run test:launcher
-          bun run site:test
-
-      - name: Build application and website
-        working-directory: source
-        run: |
-          bun run build
-          bun run site:build
+        run: bun run test
