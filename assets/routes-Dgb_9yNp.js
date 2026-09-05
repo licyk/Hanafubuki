@@ -1,0 +1,1 @@
+var e={"zh-CN":{title:`Hanafubuki — 本地 AI WebUI 桌面管理器`,description:`在一个桌面工作区中安装、导入、启动和维护 Stable Diffusion WebUI、ComfyUI 等本地生成式 AI 工具。`},en:{title:`Hanafubuki — Local AI WebUI Desktop Manager`,description:`Install, import, launch, and maintain Stable Diffusion WebUI, ComfyUI, and other local generative AI tools from one desktop workspace.`}};export{e as t};

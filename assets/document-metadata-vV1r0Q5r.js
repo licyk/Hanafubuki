@@ -1,0 +1,1 @@
+import{r as e}from"./rolldown-runtime-hePW80VL.js";import{n as t}from"./react-dom-LUr5D_Rr.js";var n=e(t(),1);function r({description:e,title:t}){(0,n.useEffect)(()=>{document.title=t;let n=document.querySelector(`meta[name="description"]`);n||(n=document.createElement(`meta`),n.name=`description`,document.head.append(n)),n.content=e},[e,t])}export{r as t};
