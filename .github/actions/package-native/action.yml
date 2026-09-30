@@ -56,10 +56,10 @@ runs:
         python-version: "3.12"
     - uses: oven-sh/setup-bun@v2
       with:
-        bun-version: "1.3.14"
+        bun-version: "1.4.2"
     - uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
-        toolchain: "1.97.1"
+        toolchain: "1.98.1"
         target: ${{ inputs.target_triple }}
     - name: Install Linux bundling prerequisites
       if: inputs.platform == 'linux'
