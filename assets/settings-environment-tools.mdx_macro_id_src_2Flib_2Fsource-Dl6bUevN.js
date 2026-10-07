@@ -1,0 +1,18 @@
+import{r as e}from"./rolldown-runtime-hePW80VL.js";import{t}from"./jsx-runtime-NZYk81nU.js";var n=e(t()),r={title:`环境工具`,description:`配置 uv、启动前环境检查和 CUDA 显存优化。`,icon:`Wrench`},i={contents:[{heading:void 0,content:`环境工具决定安装流程和 WebUI 启动时怎样使用实例 Python。它们不会选择应用 Python 版本，也不会代替实例管理中的 PyTorch、扩展或版本操作。`},{heading:`启用-uv`,content:`开启后，支持的 Python 软件包安装使用 uv 代替 pip，通常速度更快。某些安装脚本或非标准软件包与 uv 不兼容时，可以临时关闭后重试同一个操作。`},{heading:`启用-uv`,content:`关闭 uv 不会卸载已经安装的软件包，也不会自动把环境恢复到之前状态；它只改变后续安装命令使用的工具。`},{heading:`启用环境检查`,content:`开启后，应用会在 WebUI 启动前检查并修复其依赖。首次启动、更新 Core、恢复快照或修改依赖后建议保持开启。`},{heading:`启用环境检查`,content:`环境检查可能增加启动时间。只有确认实例环境已经完整，并且需要对比检查流程是否导致启动失败时，才临时关闭；排查结束后应重新开启。`},{heading:`启用-cuda-显存优化`,content:`该选项在启动 WebUI 时请求 CUDA 异步显存分配器：`},{heading:`启用-cuda-显存优化`,content:`只在支持该能力的 NVIDIA 环境中生效；`},{heading:`启用-cuda-显存优化`,content:`AMD、Intel、Apple 或 CPU 环境会忽略；`},{heading:`启用-cuda-显存优化`,content:`某些旧驱动、旧版 CUDA 或特定 WebUI 组合可能不兼容。`},{heading:`启用-cuda-显存优化`,content:`遇到启动阶段的 CUDA 分配器错误时，先关闭此项并重新启动实例进行对比，不要同时更换 PyTorch 和多个启动参数。`},{heading:`修改与验证`,content:`环境工具属于应用级设置。修改后，之后执行相关流程的所有实例都可能受到影响，因此不要为解决单个实例问题长期关闭必要检查。`}],headings:[{id:`启用-uv`,content:`启用 uv`},{id:`启用环境检查`,content:`启用环境检查`},{id:`启用-cuda-显存优化`,content:`启用 CUDA 显存优化`},{id:`修改与验证`,content:`修改与验证`}]},a=[{depth:2,url:`#启用-uv`,title:(0,n.jsx)(n.Fragment,{children:`启用 uv`})},{depth:2,url:`#启用环境检查`,title:(0,n.jsx)(n.Fragment,{children:`启用环境检查`})},{depth:2,url:`#启用-cuda-显存优化`,title:(0,n.jsx)(n.Fragment,{children:`启用 CUDA 显存优化`})},{depth:2,url:`#修改与验证`,title:(0,n.jsx)(n.Fragment,{children:`修改与验证`})}];function o(e){let t={h2:`h2`,li:`li`,p:`p`,ul:`ul`,...e.components},{Callout:r,Step:i,Steps:a}=t;return r||c(`Callout`,!0),i||c(`Step`,!0),a||c(`Steps`,!0),(0,n.jsxs)(n.Fragment,{children:[(0,n.jsx)(t.p,{children:`环境工具决定安装流程和 WebUI 启动时怎样使用实例 Python。它们不会选择应用 Python 版本，也不会代替实例管理中的 PyTorch、扩展或版本操作。`}),`
+`,(0,n.jsx)(t.h2,{id:`启用-uv`,children:`启用 uv`}),`
+`,(0,n.jsx)(t.p,{children:`开启后，支持的 Python 软件包安装使用 uv 代替 pip，通常速度更快。某些安装脚本或非标准软件包与 uv 不兼容时，可以临时关闭后重试同一个操作。`}),`
+`,(0,n.jsx)(t.p,{children:`关闭 uv 不会卸载已经安装的软件包，也不会自动把环境恢复到之前状态；它只改变后续安装命令使用的工具。`}),`
+`,(0,n.jsx)(t.h2,{id:`启用环境检查`,children:`启用环境检查`}),`
+`,(0,n.jsx)(t.p,{children:`开启后，应用会在 WebUI 启动前检查并修复其依赖。首次启动、更新 Core、恢复快照或修改依赖后建议保持开启。`}),`
+`,(0,n.jsx)(t.p,{children:`环境检查可能增加启动时间。只有确认实例环境已经完整，并且需要对比检查流程是否导致启动失败时，才临时关闭；排查结束后应重新开启。`}),`
+`,(0,n.jsx)(t.h2,{id:`启用-cuda-显存优化`,children:`启用 CUDA 显存优化`}),`
+`,(0,n.jsx)(t.p,{children:`该选项在启动 WebUI 时请求 CUDA 异步显存分配器：`}),`
+`,(0,n.jsxs)(t.ul,{children:[`
+`,(0,n.jsx)(t.li,{children:`只在支持该能力的 NVIDIA 环境中生效；`}),`
+`,(0,n.jsx)(t.li,{children:`AMD、Intel、Apple 或 CPU 环境会忽略；`}),`
+`,(0,n.jsx)(t.li,{children:`某些旧驱动、旧版 CUDA 或特定 WebUI 组合可能不兼容。`}),`
+`]}),`
+`,(0,n.jsx)(t.p,{children:`遇到启动阶段的 CUDA 分配器错误时，先关闭此项并重新启动实例进行对比，不要同时更换 PyTorch 和多个启动参数。`}),`
+`,(0,n.jsx)(t.h2,{id:`修改与验证`,children:`修改与验证`}),`
+`,(0,n.jsxs)(a,{children:[(0,n.jsx)(i,{children:`记录当前设置和需要解决的具体错误。`}),(0,n.jsx)(i,{children:`一次只修改 uv、环境检查或 CUDA 优化中的一项；开关会自动保存。`}),(0,n.jsx)(i,{children:`停止并重新启动相关 WebUI，让新的启动或安装计划读取设置。`}),(0,n.jsx)(i,{children:`在任务输出中确认安装工具、环境检查或 CUDA 错误是否发生变化。`}),(0,n.jsx)(i,{children:`如果没有改善，恢复默认设置，再继续检查实例依赖或显卡环境。`})]}),`
+`,(0,n.jsx)(r,{title:`全局设置会影响多个实例`,children:(0,n.jsx)(t.p,{children:`环境工具属于应用级设置。修改后，之后执行相关流程的所有实例都可能受到影响，因此不要为解决单个实例问题长期关闭必要检查。`})})]})}function s(e={}){let{wrapper:t}=e.components||{};return t?(0,n.jsx)(t,{...e,children:(0,n.jsx)(o,{...e})}):o(e)}function c(e,t){throw Error(`Expected `+(t?`component`:`object`)+" `"+e+"` to be defined: you likely forgot to import, pass, or provide it.")}export{s as default,r as frontmatter,i as structuredData,a as toc};
