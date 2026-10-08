@@ -51,13 +51,13 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/setup-python@v7
+    - uses: actions/setup-python@v7.0.0
       with:
         python-version: "3.12"
-    - uses: oven-sh/setup-bun@v2
+    - uses: oven-sh/setup-bun@v2.2.0
       with:
         bun-version-file: source/package.json
-    - uses: actions-rust-lang/setup-rust-toolchain@v1
+    - uses: actions-rust-lang/setup-rust-toolchain@v2.0.0
       with:
         rust-src-dir: source
         target: ${{ inputs.target_triple }}
@@ -78,7 +78,7 @@ runs:
       shell: bash
       working-directory: source
       run: bun install --frozen-lockfile
-    - uses: actions/download-artifact@v8
+    - uses: actions/download-artifact@v8.0.2
       with:
         name: hanafubuki-compiled-${{ inputs.version }}-${{ inputs.target_triple }}
         path: source/src-tauri/target/${{ inputs.target_triple }}/release
@@ -363,7 +363,7 @@ runs:
           --architecture "${{ inputs.architecture }}" \
           --updater-kind "${{ inputs.updater_kind }}" \
           "${sources[@]}"
-    - uses: actions/upload-artifact@v7
+    - uses: actions/upload-artifact@v7.0.2
       with:
         name: hanafubuki-release-${{ inputs.version }}-${{ inputs.target_triple }}
         path: ${{ runner.temp }}/hanafubuki-target-${{ inputs.target_triple }}

@@ -21,7 +21,7 @@ jobs:
     name: Build and publish website
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7.0.1
 
       - name: Configure Git
         shell: bash
@@ -59,7 +59,7 @@ jobs:
           git -C source checkout --detach FETCH_HEAD
           git -C source rev-parse HEAD
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: source/package.json
 

@@ -15,7 +15,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/download-artifact@v8
+    - uses: actions/download-artifact@v8.0.2
       with:
         pattern: hanafubuki-release-${{ inputs.version }}-*
         path: source/release-bundles
@@ -32,7 +32,7 @@ runs:
           printf 'signed=false\n' >> "$GITHUB_OUTPUT"
           echo "Updater signing private key is missing; retaining unsigned updater artifacts."
         fi
-    - uses: oven-sh/setup-bun@v2
+    - uses: oven-sh/setup-bun@v2.2.0
       if: steps.updater_signing.outputs.signed == 'true'
       with:
         bun-version-file: source/package.json
@@ -71,7 +71,7 @@ runs:
           echo "No target handoffs were downloaded for updater signing." >&2
           exit 1
         fi
-    - uses: actions/upload-artifact@v7
+    - uses: actions/upload-artifact@v7.0.2
       with:
         name: hanafubuki-release-${{ inputs.version }}
         path: source/release-bundles

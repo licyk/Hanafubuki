@@ -61,19 +61,19 @@ jobs:
           [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
           echo "Validating development source commit: $source_sha"
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
 
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: source/package.json
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2.0.0
         with:
           rust-src-dir: source
 
