@@ -27,6 +27,7 @@ Hanafubuki 是一款用于安装、导入、运行和维护本地生成式 AI We
 - Fooocus
 - SD Trainer
 - Qwen TTS WebUI
+- RVC Next WebUI
 
 不同 WebUI 提供的管理能力可能有所不同，Hanafubuki 会根据实例类型和实际能力显示可用功能。
 
