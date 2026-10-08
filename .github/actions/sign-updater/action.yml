@@ -35,7 +35,7 @@ runs:
     - uses: oven-sh/setup-bun@v2
       if: steps.updater_signing.outputs.signed == 'true'
       with:
-        bun-version: "1.4.2"
+        bun-version-file: source/package.json
     - name: Install updater signer
       if: steps.updater_signing.outputs.signed == 'true'
       shell: bash

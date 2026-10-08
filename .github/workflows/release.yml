@@ -87,7 +87,6 @@ jobs:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: "0.11.9"
           enable-cache: true
       - name: Install release tooling
         working-directory: source
@@ -218,7 +217,6 @@ jobs:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: "0.11.9"
           enable-cache: true
       - name: Install release tooling
         working-directory: source

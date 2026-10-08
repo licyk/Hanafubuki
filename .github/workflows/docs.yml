@@ -61,7 +61,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.2"
+          bun-version-file: source/package.json
 
       - name: Install locked dependencies
         working-directory: source
