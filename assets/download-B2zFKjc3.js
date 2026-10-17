@@ -1,0 +1,1 @@
+var e={"zh-CN":{title:`下载 Hanafubuki`,description:`下载 Hanafubuki 桌面版安装包，或获取解压即用的便携版 Launcher。`},en:{title:`Download Hanafubuki`,description:`Download a Hanafubuki desktop installer or the extract-and-run portable Launcher.`}};export{e as t};
