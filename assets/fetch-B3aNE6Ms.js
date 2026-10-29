@@ -1,0 +1,1 @@
+export{t as fetchClient}from"./fetch-C7oaXLT0.js";
