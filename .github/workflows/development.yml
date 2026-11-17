@@ -93,6 +93,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes \
+            libcap-dev \
             libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev \
             libxkbcommon-dev \
