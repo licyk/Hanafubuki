@@ -9,10 +9,6 @@ Hanafubuki 是一款用于安装、导入、运行和维护本地生成式 AI We
 
 [官方网站](https://hanafubuki.netlify.app/) · [下载 Hanafubuki](https://hanafubuki.netlify.app/download) · [使用文档](https://hanafubuki.netlify.app/docs) · [问题反馈](https://github.com/licyk/Hanafubuki/issues)
 
-开发验证工作流会在 Linux（`ubuntu-22.04`）、Windows（`windows-latest`）和
-macOS（`macos-latest`）原生运行器上分别准备构建资源、运行源码仓库的检查与测试，
-以及发布工具测试。一个平台失败不会取消其他平台；三个平台都通过才算该工作流通过。
-
 ## 主要功能
 
 - 新建、导入、扫描和管理多个 WebUI 实例
@@ -21,9 +17,9 @@ macOS（`macos-latest`）原生运行器上分别准备构建资源、运行源�
 - 提供任务日志、快照、诊断和故障恢复能力
 - 内置可连接本地工具的 Agent，协助处理项目与环境任务
 
-## 支持的 WebUI
+## 支持的实例
 
-目前支持：
+Hanafubuki 内置支持以下实例类型：
 
 - Stable Diffusion WebUI
 - ComfyUI
@@ -32,8 +28,9 @@ macOS（`macos-latest`）原生运行器上分别准备构建资源、运行源�
 - SD Trainer
 - Qwen TTS WebUI
 - RVC Next WebUI
+- Mizuoto TTS WebUI（多引擎文本转语音）
 
-不同 WebUI 提供的管理能力可能有所不同，Hanafubuki 会根据实例类型和实际能力显示可用功能。
+你还可以从应用内的「扩展市场」安装并启用提供实例类型的扩展，然后在新建实例时选择对应类型。每种实例可用的管理功能取决于该类型提供的能力。
 
 ## 下载与安装
 
