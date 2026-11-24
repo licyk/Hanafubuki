@@ -28,7 +28,7 @@ Hanafubuki 内置支持以下实例类型：
 - SD Trainer
 - Qwen TTS WebUI
 - RVC Next WebUI
-- Mizuoto TTS WebUI（多引擎文本转语音）
+- Mizuoto TTS WebUI
 
 你还可以从应用内的「扩展市场」安装并启用提供实例类型的扩展，然后在新建实例时选择对应类型。每种实例可用的管理功能取决于该类型提供的能力。
 
