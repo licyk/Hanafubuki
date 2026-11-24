@@ -55,17 +55,18 @@ runs:
         roots=(release-bundles/hanafubuki-release-${{ inputs.version }}-*)
         for root in "${roots[@]}"; do
           found=true
-          target="$(basename "$root")"
-          filename="$(bun scripts/release/target-manifest.ts updater-path --directory "$root")"
-          if [[ "$filename" != "$(basename "$filename")" || ! -s "$root/$filename" ]]; then
-            echo "target.json selected an invalid updater artifact for ${target}." >&2
-            exit 1
-          fi
-          bun run tauri signer sign "$root/$filename"
-          if [[ ! -s "$root/$filename.sig" ]]; then
-            echo "Updater signer did not create a non-empty signature for $filename." >&2
-            exit 1
-          fi
+          filenames="$(bun scripts/release/target-manifest.ts signed-paths --directory "$root")"
+          while IFS= read -r filename; do
+            if [[ -z "$filename" || "$filename" != "$(basename "$filename")" || ! -s "$root/$filename" ]]; then
+              echo "target.json selected an invalid signing artifact for $(basename "$root")." >&2
+              exit 1
+            fi
+            bun run tauri signer sign "$root/$filename"
+            if [[ ! -s "$root/$filename.sig" ]]; then
+              echo "Updater signer did not create a non-empty signature for $filename." >&2
+              exit 1
+            fi
+          done <<< "$filenames"
         done
         if [[ "$found" != "true" ]]; then
           echo "No target handoffs were downloaded for updater signing." >&2
