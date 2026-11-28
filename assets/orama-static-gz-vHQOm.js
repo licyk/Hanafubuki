@@ -1,0 +1,1 @@
+export{t as oramaStaticClient,n as staticClient}from"./orama-static-itWaMlqS.js";
